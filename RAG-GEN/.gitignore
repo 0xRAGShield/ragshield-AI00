@@ -1,0 +1,34 @@
+# Python virtual environment
+.venv/
+
+# Environment / secrets
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE / Visual Studio
+.vscode/
+.vs/
+.idea/
+
+# Logs
+*.log
+
+# Local model files
+qwen3-vl-8b
+models/*
+!models/.gitkeep
+
+# Local data
+data/raw/*
+!data/raw/.gitkeep
+
+data/processed/*
+!data/processed/.gitkeep
+
+# Test / type-check / local cache
+.pytest_cache/
+.mypy_cache/
+.cache/
