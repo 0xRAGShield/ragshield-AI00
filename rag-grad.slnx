@@ -1,0 +1,42 @@
+<Solution>
+  <Folder Name="/app/">
+    <File Path=".env" />
+    <File Path=".env.example" />
+    <File Path=".gitignore" />
+  </Folder>
+  <Folder Name="/app/arabic/">
+    <File Path="../../../Desktop/RAG M/ragshield-AI-phase-3-evaluation-handoff/egyptian.py" />
+    <File Path="../../../Desktop/RAG M/ragshield-AI-phase-3-evaluation-handoff/normalization.py" />
+    <File Path="__init__.py" />
+  </Folder>
+  <Folder Name="/app/context/">
+    <File Path="../../../Desktop/RAG M/context_builder.py" />
+    <File Path="__init__.py" />
+  </Folder>
+  <Folder Name="/app/core/">
+    <File Path="settings.py" />
+    <File Path="__init__.py" />
+  </Folder>
+  <Folder Name="/app/generation/" />
+  <Folder Name="/app/generation/llm/">
+    <File Path="../../../Desktop/RAG M/llm.py" />
+    <File Path="__init__.py" />
+  </Folder>
+  <Folder Name="/app/generation/prompts/">
+    <File Path="../../../Desktop/RAG M/prompt_builder.py" />
+    <File Path="__init__.py" />
+  </Folder>
+  <Folder Name="/app/LLModel/" />
+  <Folder Name="/app/models/">
+    <File Path="rag_models.py" />
+  </Folder>
+  <Folder Name="/app/pipeline/">
+    <File Path="pipeline.py" />
+    <File Path="__init__.py" />
+  </Folder>
+  <Folder Name="/app/retrieval/">
+    <File Path="../../../Desktop/RAG M/retriever.py" />
+    <File Path="reranker.py" />
+    <File Path="__init__.py" />
+  </Folder>
+</Solution>
