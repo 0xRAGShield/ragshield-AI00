@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from app.ingestion.loaders import FileParser
 from app.ingestion.cleaner import clean_document
+from app.ingestion.loaders import FileParser
+from app.models.evidence_models import SourceDocument
 
 
 def test_clean_documents():
@@ -9,7 +10,15 @@ def test_clean_documents():
 
     parser = FileParser()
 
-    documents = parser.load_directory(documents_path)
+    loaded_files = parser.load_directory(
+        documents_path
+    )
+
+    documents = [
+        file
+        for file in loaded_files
+        if isinstance(file, SourceDocument)
+    ]
 
     print(f"Loaded documents: {len(documents)}")
     print("*" * 80)
@@ -22,17 +31,29 @@ def test_clean_documents():
         print("\nOriginal text:")
         print(document.text[:500])
 
-        cleaned_document = clean_document(document)
+        cleaned_document = clean_document(
+            document
+        )
 
         print("\nCleaned text:")
         print(cleaned_document.text[:500])
 
         print("\n" + "*" * 80)
 
-        
-        assert cleaned_document.source_id == document.source_id
-        assert cleaned_document.title == document.title
-        assert cleaned_document.media_type == document.media_type
+        assert (
+            cleaned_document.source_id
+            == document.source_id
+        )
+
+        assert (
+            cleaned_document.title
+            == document.title
+        )
+
+        assert (
+            cleaned_document.media_type
+            == document.media_type
+        )
 
         assert "   " not in cleaned_document.text
         assert "\n\n\n" not in cleaned_document.text

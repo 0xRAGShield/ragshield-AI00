@@ -53,7 +53,6 @@ for image_path in image_directory.rglob("*"):
         continue
 
     try:
-
         image = parser.load_file(
             str(image_path)
         )
@@ -72,14 +71,16 @@ print(f"Loaded images: {len(images)}")
 
 for image in images:
 
-    print("\nSource:", image["metadata"]["source"])
-    print("File type:", image["metadata"]["file_type"])
-    print("Extension:", image["metadata"]["extension"])
-    print("Image path:", image["image_path"])
+    print("\nSource ID:", image.source_id)
+    print("Title:", image.title)
+    print("Media type:", image.media_type)
+    print("File type:", image.metadata["file_type"])
+    print("Extension:", image.metadata["extension"])
+    print("Image path:", image.image_path)
 
     # Check that the image can actually be opened
     img = Image.open(
-        image["image_path"]
+        image.image_path
     )
 
     print("Image size:", img.size)
@@ -89,4 +90,3 @@ for image in images:
 
 
 print("\nFILE PARSER TEST FINISHED")
-

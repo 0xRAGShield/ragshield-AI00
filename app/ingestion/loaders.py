@@ -1,23 +1,26 @@
+from __future__ import annotations
+
 from pathlib import Path
 
-from pypdf import PdfReader
 from docx import Document
+from pypdf import PdfReader
 
-from app.models.evidence_models import SourceDocument
+from app.models.evidence_models import (
+    ImageDocument,
+    SourceDocument,
+)
 
 
 class FileParser:
 
-    # Supported document formats
     DOCUMENT_EXTENSIONS = {
         ".pdf",
         ".txt",
         ".md",
         ".csv",
-        ".docx"
+        ".docx",
     }
 
-    # Supported image formats
     IMAGE_EXTENSIONS = {
         ".jpg",
         ".jpeg",
@@ -25,14 +28,17 @@ class FileParser:
         ".webp",
         ".bmp",
         ".tif",
-        ".tiff"
+        ".tiff",
     }
 
     SUPPORTED_EXTENSIONS = (
         DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS
     )
 
-    def load_file(self, file_path: str):
+    def load_file(
+        self,
+        file_path: str,
+    ) -> SourceDocument | ImageDocument:
 
         path = Path(file_path)
 
@@ -50,34 +56,27 @@ class FileParser:
 
         if extension not in self.SUPPORTED_EXTENSIONS:
             raise ValueError(
-                f"Unsupported file type: {extension}. "
-                f"Supported types: {self.SUPPORTED_EXTENSIONS}"
+                f"Unsupported file type: {extension}"
             )
 
-        # Documents
         if extension in self.DOCUMENT_EXTENSIONS:
             return self._parse_document(path)
 
-        # Images
-        if extension in self.IMAGE_EXTENSIONS:
-            return self._parse_image(path)
+        return self._parse_image(path)
 
     def _parse_document(
         self,
-        file_path: Path
+        file_path: Path,
     ) -> SourceDocument:
 
         extension = file_path.suffix.lower()
 
-        # PDF
         if extension == ".pdf":
             return self._parse_pdf(file_path)
 
-        # DOCX
         if extension == ".docx":
             return self._parse_docx(file_path)
 
-        # TXT / MD / CSV
         text = file_path.read_text(
             encoding="utf-8"
         ).strip()
@@ -91,12 +90,14 @@ class FileParser:
             source_id=file_path.stem,
             title=file_path.name,
             text=text,
-            media_type=self._get_media_type(extension)
+            media_type=self._get_media_type(
+                extension
+            ),
         )
 
     def _parse_pdf(
         self,
-        file_path: Path
+        file_path: Path,
     ) -> SourceDocument:
 
         reader = PdfReader(str(file_path))
@@ -105,15 +106,17 @@ class FileParser:
 
         for page_number, page in enumerate(
             reader.pages,
-            start=1
+            start=1,
         ):
             text = page.extract_text()
 
             if text and text.strip():
-                pages.append({
-                    "page": page_number,
-                    "text": text.strip()
-                })
+                pages.append(
+                    {
+                        "page": page_number,
+                        "text": text.strip(),
+                    }
+                )
 
         if not pages:
             raise ValueError(
@@ -132,13 +135,13 @@ class FileParser:
             text=full_text,
             media_type="application/pdf",
             metadata={
-                "pages": pages
-            }
+                "pages": pages,
+            },
         )
 
     def _parse_docx(
         self,
-        file_path: Path
+        file_path: Path,
     ) -> SourceDocument:
 
         document = Document(str(file_path))
@@ -166,45 +169,67 @@ class FileParser:
             media_type=(
                 "application/vnd.openxmlformats-officedocument."
                 "wordprocessingml.document"
-            )
+            ),
         )
 
     def _parse_image(
         self,
-        file_path: Path
-    ) -> dict:
+        file_path: Path,
+    ) -> ImageDocument:
 
-        return {
-            "type": "image",
-            "image_path": str(file_path),
-            "metadata": {
-                "source": file_path.name,
-                "file_path": str(file_path),
+        return ImageDocument(
+            source_id=file_path.stem,
+            title=file_path.name,
+            image_path=str(file_path),
+            media_type=self._get_image_media_type(
+                file_path.suffix.lower()
+            ),
+            metadata={
                 "file_type": "image",
-                "extension": file_path.suffix.lower()
-            }
-        }
+                "extension": file_path.suffix.lower(),
+            },
+        )
 
     def _get_media_type(
         self,
-        extension: str
+        extension: str,
     ) -> str:
 
         media_types = {
             ".txt": "text/plain",
             ".md": "text/markdown",
-            ".csv": "text/csv"
+            ".csv": "text/csv",
         }
 
         return media_types.get(
             extension,
-            "text/plain"
+            "text/plain",
+        )
+
+    def _get_image_media_type(
+        self,
+        extension: str,
+    ) -> str:
+
+        media_types = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".tif": "image/tiff",
+            ".tiff": "image/tiff",
+        }
+
+        return media_types.get(
+            extension,
+            "application/octet-stream",
         )
 
     def load_directory(
         self,
-        directory_path: str
-    ) -> list:
+        directory_path: str,
+    ) -> list[SourceDocument | ImageDocument]:
 
         directory = Path(directory_path)
 
@@ -218,26 +243,35 @@ class FileParser:
                 f"Path is not a directory: {directory_path}"
             )
 
-        files = []
+        files: list[
+            SourceDocument | ImageDocument
+        ] = []
 
         for file_path in directory.rglob("*"):
 
             if not file_path.is_file():
                 continue
 
-            if file_path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
+            if (
+                file_path.suffix.lower()
+                not in self.SUPPORTED_EXTENSIONS
+            ):
                 continue
 
             try:
                 file = self.load_file(
                     str(file_path)
                 )
-
                 files.append(file)
 
-            except ValueError as error:
+            except (
+                ValueError,
+                OSError,
+            ) as error:
+
                 print(
-                    f"Skipping {file_path.name}: {error}"
+                    f"Skipping "
+                    f"{file_path.name}: {error}"
                 )
 
         return files
