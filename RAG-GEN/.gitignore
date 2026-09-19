@@ -1,34 +1,90 @@
-# Python virtual environment
+```gitignore
+# ============================================================
+# Python / Virtual Environment
+# ============================================================
+
 .venv/
+venv/
+env/
 
-# Environment / secrets
+# ============================================================
+# Environment / Secrets
+# ============================================================
+
 .env
+.env.*
+!.env.example
 
-# Python cache
+# ============================================================
+# Python Cache / Build Artifacts
+# ============================================================
+
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 
-# IDE / Visual Studio
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# ============================================================
+# IDE
+# ============================================================
+
 .vscode/
 .vs/
 .idea/
 
+# ============================================================
 # Logs
-*.log
+# ============================================================
 
-# Local model files
-qwen3-vl-8b
+*.log
+logs/
+
+# ============================================================
+# Local Model Weights / Hugging Face Cache
+# ============================================================
+
 models/*
 !models/.gitkeep
 
-# Local data
+qwen3-vl-8b/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.gguf
+
+# Hugging Face local cache
+.huggingface/
+.cache/huggingface/
+
+# ============================================================
+# Local / Generated Data
+# ============================================================
+
 data/raw/*
 !data/raw/.gitkeep
 
 data/processed/*
 !data/processed/.gitkeep
 
-# Test / type-check / local cache
-.pytest_cache/
-.mypy_cache/
-.cache/
+# ============================================================
+# Local Vector Store / Runtime Storage
+# ============================================================
+
+qdrant_storage/
+storage/
+
+# ============================================================
+# OS Files
+# ============================================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+```

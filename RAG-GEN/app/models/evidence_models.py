@@ -1,4 +1,8 @@
+
 from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -7,7 +11,7 @@ class SourceDocument(BaseModel):
     title: str
     text: str
     media_type: str = "text/plain"
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ImageDocument(BaseModel):
@@ -15,11 +19,11 @@ class ImageDocument(BaseModel):
     title: str
     image_path: str
     media_type: str
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class EvidenceChunk(BaseModel):
     chunk_id: str
     source_id: str
     text: str
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
