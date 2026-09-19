@@ -1,0 +1,100 @@
+[1mdiff --git a/RAG-GEN/RAG-GEN.pyproj b/RAG-GEN/RAG-GEN.pyproj[m
+[1mindex 1601db2..7e678a3 100644[m
+[1m--- a/RAG-GEN/RAG-GEN.pyproj[m
+[1m+++ b/RAG-GEN/RAG-GEN.pyproj[m
+[36m@@ -21,7 +21,45 @@[m
+     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>[m
+   </PropertyGroup>[m
+   <ItemGroup>[m
+[32m+[m[32m    <Compile Include="app\arabic\egyptian.py" />[m
+[32m+[m[32m    <Compile Include="app\arabic\normalization.py" />[m
+[32m+[m[32m    <Compile Include="app\arabic\__init__.py" />[m
+[32m+[m[32m    <Compile Include="app\context\context_builder.py" />[m
+[32m+[m[32m    <Compile Include="app\context\__init__.py" />[m
+[32m+[m[32m    <Compile Include="app\core\settings.py" />[m
+[32m+[m[32m    <Compile Include="app\core\__init__.py" />[m
+[32m+[m[32m    <Compile Include="app\generation\llm\llm.py" />[m
+[32m+[m[32m    <Compile Include="app\generation\llm\__init__.py" />[m
+[32m+[m[32m    <Compile Include="app\generation\prompts\prompt_builder.py" />[m
+[32m+[m[32m    <Compile Include="app\generation\prompts\__init__.py" />[m
+[32m+[m[32m    <Compile Include="app\models\rag_models.py" />[m
+[32m+[m[32m    <Compile Include="app\models\__init__.py" />[m
+[32m+[m[32m    <Compile Include="app\pipeline\pipeline.py" />[m
+[32m+[m[32m    <Compile Include="app\pipeline\__init__.py" />[m
+[32m+[m[32m    <Compile Include="app\retrieval\reranker.py" />[m
+[32m+[m[32m    <Compile Include="app\retrieval\retriever.py" />[m
+[32m+[m[32m    <Compile Include="app\retrieval\__init__.py" />[m
+     <Compile Include="RAG_GEN.py" />[m
+[32m+[m[32m    <Compile Include="tests\test_qwen.py" />[m
+[32m+[m[32m  </ItemGroup>[m
+[32m+[m[32m  <ItemGroup>[m
+[32m+[m[32m    <Folder Include="app\" />[m
+[32m+[m[32m    <Folder Include="app\arabic\" />[m
+[32m+[m[32m    <Folder Include="app\context\" />[m
+[32m+[m[32m    <Folder Include="app\core\" />[m
+[32m+[m[32m    <Folder Include="app\generation\" />[m
+[32m+[m[32m    <Folder Include="app\generation\llm\" />[m
+[32m+[m[32m    <Folder Include="app\generation\prompts\" />[m
+[32m+[m[32m    <Folder Include="app\LLModel\" />[m
+[32m+[m[32m    <Folder Include="app\models\" />[m
+[32m+[m[32m    <Folder Include="app\retrieval\" />[m
+[32m+[m[32m    <Folder Include="app\pipeline\" />[m
+[32m+[m[32m    <Folder Include="tests\" />[m
+[32m+[m[32m  </ItemGroup>[m
+[32m+[m[32m  <ItemGroup>[m
+[32m+[m[32m    <Content Include=".env" />[m
+[32m+[m[32m    <Content Include=".env.example" />[m
+[32m+[m[32m    <Content Include=".gitignore" />[m
+   </ItemGroup>[m
+   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />[m
+   <!-- Uncomment the CoreCompile target to enable the Build command in[m
+[1mdiff --git a/rag-grad.slnx b/rag-grad.slnx[m
+[1mindex 1c53a86..81ecb9b 100644[m
+[1m--- a/rag-grad.slnx[m
+[1m+++ b/rag-grad.slnx[m
+[36m@@ -1,42 +1,5 @@[m
+ <Solution>[m
+[31m-  <Folder Name="/app/">[m
+[31m-    <File Path=".env" />[m
+[31m-    <File Path=".env.example" />[m
+[31m-    <File Path=".gitignore" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/arabic/">[m
+[31m-    <File Path="../../../Desktop/RAG M/ragshield-AI-phase-3-evaluation-handoff/egyptian.py" />[m
+[31m-    <File Path="../../../Desktop/RAG M/ragshield-AI-phase-3-evaluation-handoff/normalization.py" />[m
+[31m-    <File Path="__init__.py" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/context/">[m
+[31m-    <File Path="../../../Desktop/RAG M/context_builder.py" />[m
+[31m-    <File Path="__init__.py" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/core/">[m
+[31m-    <File Path="settings.py" />[m
+[31m-    <File Path="__init__.py" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/generation/" />[m
+[31m-  <Folder Name="/app/generation/llm/">[m
+[31m-    <File Path="../../../Desktop/RAG M/llm.py" />[m
+[31m-    <File Path="__init__.py" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/generation/prompts/">[m
+[31m-    <File Path="../../../Desktop/RAG M/prompt_builder.py" />[m
+[31m-    <File Path="__init__.py" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/LLModel/" />[m
+[31m-  <Folder Name="/app/models/">[m
+[31m-    <File Path="rag_models.py" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/pipeline/">[m
+[31m-    <File Path="pipeline.py" />[m
+[31m-    <File Path="__init__.py" />[m
+[31m-  </Folder>[m
+[31m-  <Folder Name="/app/retrieval/">[m
+[31m-    <File Path="../../../Desktop/RAG M/retriever.py" />[m
+[31m-    <File Path="reranker.py" />[m
+[31m-    <File Path="__init__.py" />[m
+[31m-  </Folder>[m
+[32m+[m[32m  <Project Path="RAG-GEN/RAG-GEN.pyproj" Type="888888a0-9f3d-457c-b088-3a5042f75d52" Id="3a99aab1-20b4-4b3e-8e9c-1717e3b67e3c">[m
+[32m+[m[32m    <Build Project="false" />[m
+[32m+[m[32m  </Project>[m
+ </Solution>[m

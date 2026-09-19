@@ -21,7 +21,45 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="app\arabic\egyptian.py" />
+    <Compile Include="app\arabic\normalization.py" />
+    <Compile Include="app\arabic\__init__.py" />
+    <Compile Include="app\context\context_builder.py" />
+    <Compile Include="app\context\__init__.py" />
+    <Compile Include="app\core\settings.py" />
+    <Compile Include="app\core\__init__.py" />
+    <Compile Include="app\generation\llm\llm.py" />
+    <Compile Include="app\generation\llm\__init__.py" />
+    <Compile Include="app\generation\prompts\prompt_builder.py" />
+    <Compile Include="app\generation\prompts\__init__.py" />
+    <Compile Include="app\models\rag_models.py" />
+    <Compile Include="app\models\__init__.py" />
+    <Compile Include="app\pipeline\pipeline.py" />
+    <Compile Include="app\pipeline\__init__.py" />
+    <Compile Include="app\retrieval\reranker.py" />
+    <Compile Include="app\retrieval\retriever.py" />
+    <Compile Include="app\retrieval\__init__.py" />
     <Compile Include="RAG_GEN.py" />
+    <Compile Include="tests\test_qwen.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="app\" />
+    <Folder Include="app\arabic\" />
+    <Folder Include="app\context\" />
+    <Folder Include="app\core\" />
+    <Folder Include="app\generation\" />
+    <Folder Include="app\generation\llm\" />
+    <Folder Include="app\generation\prompts\" />
+    <Folder Include="app\LLModel\" />
+    <Folder Include="app\models\" />
+    <Folder Include="app\retrieval\" />
+    <Folder Include="app\pipeline\" />
+    <Folder Include="tests\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include=".env" />
+    <Content Include=".env.example" />
+    <Content Include=".gitignore" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
