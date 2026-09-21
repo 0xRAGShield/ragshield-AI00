@@ -6,14 +6,14 @@ from app.vector_store.vector_store import QdrantStore
 from app.ingestion.pipeline import IngestionPipeline
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_PATH = PROJECT_ROOT / "data"
 
 
 embedder = BGE_M3_Embedding()
 
 store = QdrantStore(
-    collection_name="ragshield_corpus"
+    collection_name="ragshield_test"
 )
 
 indexer = Indexer(

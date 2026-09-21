@@ -1,8 +1,10 @@
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.models.evidence_models import SourceDocument
 from app.ingestion.loaders import FileParser
 from app.ingestion.cleaner import clean_document
 from app.ingestion.chunker import ParentChildChunker
@@ -18,6 +20,7 @@ class IngestionResult:
 
 
 class IngestionPipeline:
+
     def __init__(
         self,
         *,
@@ -52,9 +55,15 @@ class IngestionPipeline:
                 chunks_indexed=0,
             )
 
+        source_documents = [
+            document
+            for document in documents
+            if isinstance(document, SourceDocument)
+        ]
+
         cleaned_documents = [
             clean_document(document)
-            for document in documents
+            for document in source_documents
         ]
 
         chunks = self._chunker.chunk_documents(
@@ -69,3 +78,4 @@ class IngestionPipeline:
             chunks_created=len(chunks),
             chunks_indexed=indexed_chunks,
         )
+

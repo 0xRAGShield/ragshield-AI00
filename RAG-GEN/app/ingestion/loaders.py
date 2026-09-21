@@ -1,7 +1,9 @@
+
 from __future__ import annotations
 
 import hashlib
 import logging
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -101,7 +103,6 @@ class FileParser:
         limits: ParserLimits | None = None,
     ) -> None:
         self._limits = limits or ParserLimits()
-
         self._validate_limits()
 
     def load_file(
@@ -121,7 +122,6 @@ class FileParser:
         """
 
         path = Path(file_path)
-
         self._validate_file(path)
 
         extension = path.suffix.lower()
@@ -169,7 +169,10 @@ class FileParser:
 
             processed_files += 1
 
-            if processed_files > self._limits.max_directory_files:
+            if (
+                processed_files
+                > self._limits.max_directory_files
+            ):
                 raise ValueError(
                     "Directory contains more supported files than "
                     f"the configured limit "
@@ -192,7 +195,10 @@ class FileParser:
 
         return documents
 
-    def _validate_file(self, file_path: Path) -> None:
+    def _validate_file(
+        self,
+        file_path: Path,
+    ) -> None:
         if not file_path.exists():
             raise FileNotFoundError(
                 f"File not found: {file_path}"
@@ -336,7 +342,10 @@ class FileParser:
                 f"{file_path.name}"
             )
 
-        self._validate_extracted_text(full_text, file_path)
+        self._validate_extracted_text(
+            full_text,
+            file_path,
+        )
 
         return SourceDocument(
             source_id=self._build_source_id(file_path),
@@ -407,6 +416,21 @@ class FileParser:
                 f"Extracted text exceeds maximum allowed size: "
                 f"{file_path.name}"
             )
+
+    def _build_source_document(
+        self,
+        file_path: Path,
+        text: str,
+    ) -> SourceDocument:
+        return SourceDocument(
+            source_id=self._build_source_id(file_path),
+            title=file_path.name,
+            text=text,
+            media_type=self._MEDIA_TYPES[file_path.suffix.lower()],
+            metadata={
+                "content_sha256": self._compute_sha256(file_path),
+            },
+        )
 
     def _build_source_id(
         self,
