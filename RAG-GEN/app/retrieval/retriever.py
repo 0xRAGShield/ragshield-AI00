@@ -194,6 +194,13 @@ class Retriever:
         metrics.total_latency_ms = (
             time.perf_counter() - started_at
         ) * 1000.0
+        print(
+            "\n=== RETRIEVAL LATENCY ==="
+            f"\nBGE-M3 Embedding: {metrics.embedding_latency_ms:.2f} ms"
+            f"\nQdrant Search: {metrics.search_latency_ms:.2f} ms"
+            f"\nRetrieval Total: {metrics.total_latency_ms:.2f} ms"
+        
+          )
 
         if metrics.dropped_candidates > 0:
             metrics.is_degraded = True

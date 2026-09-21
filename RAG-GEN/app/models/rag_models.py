@@ -1,44 +1,59 @@
-"""
-Canonical runtime contracts for the RAG pipeline.
-
-This module contains shared data models exchanged between RAG stages.
-
-Responsibilities
-----------------
-- Define stable, typed contracts between pipeline components.
-- Represent retrieval and reranking outputs.
-- Represent assembled evidence context.
-- Represent the final LLM prompt contract.
-
-Non-responsibilities
---------------------
-- Retrieval logic
-- Reranking logic
-- Context assembly
-- Prompt construction
-- LLM execution
-- Vector database access
-- Business logic
-"""
-
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+)
+
+# Shared Chat Contract
+
+MessageRole = Literal["system", "user"]
 
 
-# ============================================================
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+
+    role: MessageRole
+    content: str = Field(min_length=1)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "message content must not be empty."
+            )
+
+        return value
+
 # Retrieval
-# ============================================================
 
 class RetrievalQuery(BaseModel):
-    """Canonical query entering the retrieval stage."""
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    text: str = Field(
+        min_length=1,
+        max_length=100_000,
+    )
 
-    text: str = Field(min_length=1, max_length=100_000)
-    top_k: int | None = Field(default=None, ge=1, le=100)
+    top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+    )
 
     @field_validator("text")
     @classmethod
@@ -46,15 +61,18 @@ class RetrievalQuery(BaseModel):
         value = value.strip()
 
         if not value:
-            raise ValueError("Query text must not be empty.")
+            raise ValueError(
+                "Query text must not be empty."
+            )
 
         return value
 
 
 class RetrievalCandidate(BaseModel):
-    """Single candidate returned by the retrieval layer."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     chunk_id: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
@@ -62,31 +80,50 @@ class RetrievalCandidate(BaseModel):
 
     score: float
 
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(
+        default_factory=dict
+    )
 
     @field_validator("score")
     @classmethod
     def validate_score(cls, value: float) -> float:
-        if not (-float("inf") < value < float("inf")):
-            raise ValueError("Retrieval score must be finite.")
+        if not math.isfinite(float(value)):
+            raise ValueError(
+                "Retrieval score must be finite."
+            )
 
-        return value
+        return float(value)
 
 
 class RetrievalMetrics(BaseModel):
-    """Operational metrics produced by retrieval."""
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    trace_id: str = ""
 
-    requested_top_k: int
-    returned_candidates: int
-    dropped_candidates: int = Field(default=0, ge=0)
+    started_at: float = 0.0
+
+    requested_top_k: int = 0
+
+    returned_candidates: int = 0
+
+    dropped_candidates: int = 0
+
+    embedding_latency_ms: float = 0.0
+
+    search_latency_ms: float = 0.0
+
+    total_latency_ms: float = 0.0
+
+    is_degraded: bool = False
 
 
 class RetrievalResult(BaseModel):
-    """Canonical result of the retrieval stage."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     query: RetrievalQuery
 
@@ -97,53 +134,92 @@ class RetrievalResult(BaseModel):
     metrics: RetrievalMetrics
 
     is_degraded: bool = False
-    dropped_candidates_count: int = Field(
-        default=0,
-        ge=0,
-    )
 
+    dropped_candidates_count: int = 0
 
-# ============================================================
 # Reranking
-# ============================================================
 
 class RerankedCandidate(BaseModel):
-    """Candidate after reranking."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     chunk_id: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
 
-    retrieval_score: float
+    original_score: float
+
     rerank_score: float | None = None
 
-    original_rank: int = Field(ge=0)
-    rank: int = Field(ge=0)
+    original_rank: int = Field(
+        default=0,
+        ge=0,
+    )
 
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    rank: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    metadata: dict[str, Any] = Field(
+        default_factory=dict
+    )
 
     was_reranked: bool = True
 
-    @field_validator("retrieval_score", "rerank_score")
+    @field_validator(
+        "original_score",
+        "rerank_score",
+    )
     @classmethod
     def validate_scores(
         cls,
         value: float | None,
     ) -> float | None:
-        if value is not None and not (
-            -float("inf") < value < float("inf")
-        ):
-            raise ValueError("Scores must be finite.")
 
-        return value
+        if value is not None and not math.isfinite(
+            float(value)
+        ):
+            raise ValueError(
+                "Scores must be finite."
+            )
+
+        return (
+            None
+            if value is None
+            else float(value)
+        )
+
+
+class RerankerMetrics(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    trace_id: str = ""
+
+    input_count: int = 0
+
+    scored_count: int = 0
+
+    dropped_by_threshold: int = 0
+
+    final_count: int = 0
+
+    scoring_time_ms: float = 0.0
+
+    execution_time_ms: float = 0.0
+
+    used_fallback: bool = False
 
 
 class RerankedResult(BaseModel):
-    """Canonical result of the reranking stage."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     query: str = Field(min_length=1)
 
@@ -153,37 +229,47 @@ class RerankedResult(BaseModel):
 
     is_degraded: bool = False
 
-    dropped_candidates_count: int = Field(
-        default=0,
-        ge=0,
-    )
+    is_fallback: bool = False
 
-    was_reranked: bool = True
+    metrics: RerankerMetrics = Field(
+        default_factory=RerankerMetrics
+    )
 
     trace_id: str | None = None
 
+    error_code: str | None = None
 
-# ============================================================
+    dropped_candidates_count: int = 0
+
+    was_reranked: bool = True
+
 # Evidence / Context
-# ============================================================
 
 class EvidenceIdentity(BaseModel):
-    """Stable identity of a retrieved evidence item."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     chunk_id: str = Field(min_length=1)
+
     source_id: str = Field(min_length=1)
 
 
 class EvidenceProvenance(BaseModel):
-    """Traceable provenance metadata for evidence."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     source: str | None = None
+
     section: str | None = None
-    page: int | None = Field(default=None, ge=1)
+
+    page: int | None = Field(
+        default=None,
+        ge=1,
+    )
 
     source_id: str = Field(min_length=1)
 
@@ -193,93 +279,101 @@ class EvidenceProvenance(BaseModel):
 
 
 class EvidenceBlock(BaseModel):
-    """Immutable evidence unit passed to prompt construction."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     identity: EvidenceIdentity
 
     provenance: EvidenceProvenance
 
-    rank: int = Field(ge=0)
+    rank: int = Field(
+        default=0,
+        ge=0,
+    )
 
     rerank_score: float | None = None
 
     content: str = Field(min_length=1)
 
-    content_kind: Literal["untrusted_evidence"] = (
+    content_kind: Literal[
         "untrusted_evidence"
-    )
+    ] = "untrusted_evidence"
 
     token_count: int = Field(
         default=0,
         ge=0,
     )
 
-    @field_validator("rerank_score")
-    @classmethod
-    def validate_rerank_score(
-        cls,
-        value: float | None,
-    ) -> float | None:
-        if value is not None and not (
-            -float("inf") < value < float("inf")
-        ):
-            raise ValueError(
-                "rerank_score must be finite."
-            )
-
-        return value
-
 
 class ContextBudgetStats(BaseModel):
-    """Token-budget accounting for assembled evidence."""
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    max_context_tokens: int = Field(
+        ge=1
+    )
 
-    max_context_tokens: int = Field(ge=1)
-
-    used_context_tokens: int = Field(
+    estimated_context_tokens: int = Field(
         default=0,
         ge=0,
     )
 
-    dropped_evidence_items: int = Field(
+    remaining_tokens: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    prompt_reserve_tokens: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    query_reserve_tokens: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    output_reserve_tokens: int = Field(
         default=0,
         ge=0,
     )
 
 
 class ContextBuilderMetrics(BaseModel):
-    """Operational metrics for context assembly."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    input_candidates: int = Field(
-        default=0,
-        ge=0,
+    model_config = ConfigDict(
+        extra="forbid",
     )
 
-    accepted_evidence: int = Field(
-        default=0,
-        ge=0,
-    )
+    input_candidate_count: int = 0
 
-    deduplicated_candidates: int = Field(
-        default=0,
-        ge=0,
-    )
+    selected_candidate_count: int = 0
 
-    dropped_for_budget: int = Field(
-        default=0,
-        ge=0,
-    )
+    dropped_invalid: int = 0
+
+    dropped_duplicate: int = 0
+
+    dropped_token_budget: int = 0
+
+    dropped_count_limit: int = 0
+
+    dropped_evidence_count: int = 0
+
+    estimated_context_tokens: int = 0
+
+    context_token_budget: int = 0
+
+    context_build_time_ms: float = 0.0
 
 
 class AssembledContext(BaseModel):
-    """Canonical output of the context-building stage."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
     query: str = Field(min_length=1)
 
@@ -289,10 +383,7 @@ class AssembledContext(BaseModel):
 
     is_degraded: bool = False
 
-    dropped_evidence_count: int = Field(
-        default=0,
-        ge=0,
-    )
+    dropped_evidence_count: int = 0
 
     budget: ContextBudgetStats
 
@@ -300,41 +391,38 @@ class AssembledContext(BaseModel):
 
     trace_id: str | None = None
 
-    tokenizer_encoding: str
+    tokenizer_encoding: str | None = None
 
-
-# ============================================================
 # Prompt
-# ============================================================
-
-class PromptMessage(BaseModel):
-    """Single message in the final LLM prompt."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    role: Literal["system", "user"]
-    content: str = Field(min_length=1)
-
 
 class LLMPrompt(BaseModel):
-    """Canonical prompt contract passed to the LLM runtime."""
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    messages: list[PromptMessage] = Field(
+    messages: list[ChatMessage] = Field(
         min_length=1
     )
 
     trace_id: str | None = None
 
-    input_token_count: int = Field(
-        default=0,
-        ge=0,
-    )
+    safety_mode: Literal["default", "strict"] = "default"
 
-    reserved_output_tokens: int = Field(
-        default=0,
-        ge=0,
-    )
+    input_token_count: int = 0
+
+    allowed_input_tokens: int = 0
+
+    reserved_output_tokens: int = 0
+
+    output_reserve_tokens: int = 0
+
+    max_prompt_tokens: int = 0
+
+    evidence_count: int = 0
+
+    is_empty_evidence: bool = False
 
     is_degraded: bool = False
+
+    tokenizer_encoding: str | None = None

@@ -2,6 +2,7 @@
 
 Responsibilities
 ----------------
+
 - Validate LLM generation requests.
 - Own model lifecycle.
 - Execute local VLM inference.
@@ -12,6 +13,7 @@ Responsibilities
 - Emit PII/PHI-safe operational logs.
 
 This module does NOT:
+
 - retrieve evidence
 - rerank evidence
 - build context
@@ -25,9 +27,11 @@ This module does NOT:
 The public pipeline contracts do not expose Qwen-specific types.
 
 Current backend:
+
     Qwen3-VL-8B-Instruct
 
 Expected local weights:
+
     models/qwen3-vl-8b/
 
 Model downloads are intentionally disabled.
@@ -40,6 +44,7 @@ import hashlib
 import logging
 import time
 import uuid
+
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -57,7 +62,6 @@ from pydantic import (
 )
 
 from app.core.settings import (
-    BackendId,
     DeviceChoice,
     LLMSettings,
     Quantization,
@@ -184,7 +188,6 @@ def get_llm_settings() -> LLMSettings:
 
     No LLM-specific configuration is created locally.
     """
-
     return get_settings().llm
 
 
@@ -199,12 +202,14 @@ class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role: MessageRole
-
     content: str
 
     @field_validator("role")
     @classmethod
-    def validate_role(cls, value: str) -> MessageRole:
+    def validate_role(
+        cls,
+        value: str,
+    ) -> MessageRole:
         if value not in {"system", "user"}:
             raise ValueError(
                 "only system and user roles are allowed"
@@ -214,7 +219,10 @@ class ChatMessage(BaseModel):
 
     @field_validator("content")
     @classmethod
-    def validate_content(cls, value: str) -> str:
+    def validate_content(
+        cls,
+        value: str,
+    ) -> str:
         if not isinstance(value, str):
             raise ValueError("content must be str")
 
@@ -236,11 +244,8 @@ class ChatMessage(BaseModel):
 
 
 _JPEG_MAGIC = b"\xff\xd8\xff"
-
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
-
 _WEBP_RIFF = b"RIFF"
-
 _WEBP_TAG = b"WEBP"
 
 
@@ -272,12 +277,14 @@ class ImagePart(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: bytes
-
     mime_type: MimeType
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, value: bytes) -> bytes:
+    def validate_data(
+        cls,
+        value: bytes,
+    ) -> bytes:
         if isinstance(value, bytearray):
             value = bytes(value)
 
@@ -324,7 +331,6 @@ class LLMRequest(BaseModel):
     )
 
     max_new_tokens: int | None = None
-
     trace_id: str | None = None
 
     @field_validator("max_new_tokens")
@@ -388,11 +394,8 @@ class GenerationChunk(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
-
     trace_id: str
-
     is_last: bool
-
     finish_reason: FinishReason | None = None
 
     @model_validator(mode="after")
@@ -402,7 +405,10 @@ class GenerationChunk(BaseModel):
                 "last chunk requires finish_reason"
             )
 
-        if not self.is_last and self.finish_reason is not None:
+        if (
+            not self.is_last
+            and self.finish_reason is not None
+        ):
             raise ValueError(
                 "intermediate chunk cannot have finish_reason"
             )
@@ -416,30 +422,23 @@ class GenerationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
-
     finish_reason: FinishReason
-
     output_token_count: int
-
     latency_ms: float
-
     model_id: str
-
     backend_id: str
-
     quantization: Quantization
-
     modality: Modality
-
     trace_id: str
-
     streamed: bool
-
     model_fingerprint: str
 
     @field_validator("output_token_count")
     @classmethod
-    def validate_output_tokens(cls, value: int) -> int:
+    def validate_output_tokens(
+        cls,
+        value: int,
+    ) -> int:
         if isinstance(value, bool) or value < 0:
             raise ValueError(
                 "output_token_count must be >= 0"
@@ -449,7 +448,10 @@ class GenerationResult(BaseModel):
 
     @field_validator("latency_ms")
     @classmethod
-    def validate_latency(cls, value: float) -> float:
+    def validate_latency(
+        cls,
+        value: float,
+    ) -> float:
         if value < 0:
             raise ValueError(
                 "latency_ms must be >= 0"
@@ -464,9 +466,7 @@ class BackendOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
-
     finish_reason: FinishReason
-
     output_token_count: int
 
 
@@ -587,7 +587,6 @@ def compute_model_fingerprint(
                 continue
 
             stat = path.stat()
-
             relative = path.relative_to(root).as_posix()
 
             snapshot.append(
@@ -673,6 +672,7 @@ def _validate_settings(
         return LLMSettings.model_validate(
             settings.model_dump()
         )
+
     except Exception as exc:
         raise InvalidLLMConfigurationError(
             "invalid LLM settings",
@@ -830,15 +830,10 @@ class Qwen3VLBackend(IVLMBackend):
         settings: LLMSettings,
     ) -> None:
         self._settings = settings
-
         self._loaded = False
-
         self._fingerprint = ""
-
         self._device: ResolvedDevice = "cpu"
-
         self._model: Any = None
-
         self._processor: Any = None
 
     @property
@@ -933,17 +928,34 @@ class Qwen3VLBackend(IVLMBackend):
                         backend_id=self._settings.backend_id,
                     ) from exc
 
-                model_kwargs[
-                    "quantization_config"
-                ] = BitsAndBytesConfig(
-                    load_in_4bit=(
+                quantization_kwargs: dict[str, Any] = {
+                    "load_in_4bit": (
                         self._settings.quantization
                         == "4bit"
                     ),
-                    load_in_8bit=(
+                    "load_in_8bit": (
                         self._settings.quantization
                         == "8bit"
                     ),
+                }
+
+                if self._device == "cuda":
+                    quantization_kwargs[
+                        "bnb_4bit_compute_dtype"
+                    ] = torch.float16
+
+                    quantization_kwargs[
+                        "bnb_4bit_quant_type"
+                    ] = "nf4"
+
+                    quantization_kwargs[
+                        "bnb_4bit_use_double_quant"
+                    ] = True
+
+                model_kwargs[
+                    "quantization_config"
+                ] = BitsAndBytesConfig(
+                    **quantization_kwargs
                 )
 
             model = (
@@ -960,7 +972,6 @@ class Qwen3VLBackend(IVLMBackend):
             model.eval()
 
             self._processor = processor
-
             self._model = model
 
         except ModelNotReadyError:
@@ -986,11 +997,8 @@ class Qwen3VLBackend(IVLMBackend):
 
     def shutdown(self) -> None:
         self._model = None
-
         self._processor = None
-
         self._loaded = False
-
         self._fingerprint = ""
 
     def generate(
@@ -1007,11 +1015,13 @@ class Qwen3VLBackend(IVLMBackend):
             )
 
         try:
-            text, output_token_count, finish_reason = (
-                self._generate_blocking(
-                    request,
-                    max_new_tokens=max_new_tokens,
-                )
+            (
+                text,
+                output_token_count,
+                finish_reason,
+            ) = self._generate_blocking(
+                request,
+                max_new_tokens=max_new_tokens,
             )
 
             return BackendOutput(
@@ -1110,10 +1120,20 @@ class Qwen3VLBackend(IVLMBackend):
                 image_attached = True
 
             else:
+                content = []
+
+                if message.content.strip():
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": message.content,
+                        }
+                    )
+
                 messages.append(
                     {
                         "role": message.role,
-                        "content": message.content,
+                        "content": content,
                     }
                 )
 
@@ -1135,7 +1155,8 @@ class Qwen3VLBackend(IVLMBackend):
 
         except Exception as exc:
             raise LLMBackendError(
-                "failed to decode image"
+                "failed to decode image",
+                cause=exc,
             ) from exc
 
     def _generate_blocking(
@@ -1197,10 +1218,15 @@ class Qwen3VLBackend(IVLMBackend):
             input_ids.shape[-1]
         )
 
+        generate_kwargs: dict[str, Any] = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": False,
+        }
+
         with torch.inference_mode():
             generated_ids = self._model.generate(
                 **inputs,
-                max_new_tokens=max_new_tokens,
+                **generate_kwargs,
             )
 
         generated_ids_trimmed = [
@@ -1245,17 +1271,22 @@ class Qwen3VLBackend(IVLMBackend):
         self,
         inputs: Any,
     ) -> Any:
-        """Move processor tensors without assuming a specific container type."""
+        """Move processor tensors to the model execution device."""
+
+        if self._model is None:
+            raise ModelNotReadyError(
+                "model is unavailable"
+            )
+
+        device = self._model.device
 
         if hasattr(inputs, "to"):
-            return inputs.to(
-                self._model.device
-            )
+            return inputs.to(device)
 
         if isinstance(inputs, Mapping):
             return {
                 key: (
-                    value.to(self._model.device)
+                    value.to(device)
                     if hasattr(value, "to")
                     else value
                 )
@@ -1316,9 +1347,7 @@ class LLMRuntime:
         self._load_lock = asyncio.Lock()
 
         self._ready = False
-
         self._startup_called = False
-
         self._shutdown = False
 
     @property
@@ -1360,6 +1389,7 @@ class LLMRuntime:
                 backend_id=self._settings.backend_id,
                 model_id=self._settings.model_id,
             )
+
             return
 
         await self._load_backend()
@@ -1401,11 +1431,14 @@ class LLMRuntime:
         self,
         request: LLMRequest | Mapping[str, Any],
     ) -> GenerationResult:
-        prepared, modality, max_new_tokens, trace_id = (
-            prepare_request(
-                request,
-                self._settings,
-            )
+        (
+            prepared,
+            modality,
+            max_new_tokens,
+            trace_id,
+        ) = prepare_request(
+            request,
+            self._settings,
         )
 
         token = _trace_id_var.set(
@@ -1414,19 +1447,25 @@ class LLMRuntime:
 
         started_at = time.perf_counter()
 
-        diagnostics = _safe_diag(
-            trace_id=trace_id,
-            modality=modality,
-            model_id=self._settings.model_id,
-            backend_id=self._settings.backend_id,
-            timeout_seconds=self._settings.timeout_seconds,
-            max_new_tokens=max_new_tokens,
-            image_count=len(prepared.images),
-            message_count=len(prepared.messages),
-        )
-
         try:
             await self._ensure_loaded()
+
+            max_new_tokens = (
+                self._effective_max_new_tokens(
+                    max_new_tokens
+                )
+            )
+
+            diagnostics = _safe_diag(
+                trace_id=trace_id,
+                modality=modality,
+                model_id=self._settings.model_id,
+                backend_id=self._settings.backend_id,
+                timeout_seconds=self._inference_timeout_seconds(),
+                max_new_tokens=max_new_tokens,
+                image_count=len(prepared.images),
+                message_count=len(prepared.messages),
+            )
 
             _log_event(
                 "llm_generate_start",
@@ -1479,6 +1518,23 @@ class LLMRuntime:
         finally:
             _trace_id_var.reset(token)
 
+    def _inference_timeout_seconds(self) -> float:
+        timeout = self._settings.timeout_seconds
+
+        if self._backend.resolved_device == "cpu":
+            return max(timeout, 600.0)
+
+        return timeout
+
+    def _effective_max_new_tokens(
+        self,
+        max_new_tokens: int,
+    ) -> int:
+        if self._backend.resolved_device == "cpu":
+            return min(max_new_tokens, 32)
+
+        return max_new_tokens
+
     async def _execute_with_timeout(
         self,
         request: LLMRequest,
@@ -1504,7 +1560,7 @@ class LLMRuntime:
         try:
             return await asyncio.wait_for(
                 asyncio.shield(future),
-                timeout=self._settings.timeout_seconds,
+                timeout=self._inference_timeout_seconds(),
             )
 
         except TimeoutError as exc:
@@ -1566,33 +1622,43 @@ class LLMRuntime:
         """Compatibility streaming surface.
 
         The current backend emits one final chunk after complete inference.
+
         True token streaming is intentionally deferred.
         """
 
-        prepared, modality, max_new_tokens, trace_id = (
-            prepare_request(
-                request,
-                self._settings,
-            )
+        (
+            prepared,
+            modality,
+            max_new_tokens,
+            trace_id,
+        ) = prepare_request(
+            request,
+            self._settings,
         )
 
         token = _trace_id_var.set(
             trace_id
         )
 
-        diagnostics = _safe_diag(
-            trace_id=trace_id,
-            modality=modality,
-            model_id=self._settings.model_id,
-            backend_id=self._settings.backend_id,
-            timeout_seconds=self._settings.timeout_seconds,
-            max_new_tokens=max_new_tokens,
-            image_count=len(prepared.images),
-            message_count=len(prepared.messages),
-        )
-
         try:
             await self._ensure_loaded()
+
+            max_new_tokens = (
+                self._effective_max_new_tokens(
+                    max_new_tokens
+                )
+            )
+
+            diagnostics = _safe_diag(
+                trace_id=trace_id,
+                modality=modality,
+                model_id=self._settings.model_id,
+                backend_id=self._settings.backend_id,
+                timeout_seconds=self._inference_timeout_seconds(),
+                max_new_tokens=max_new_tokens,
+                image_count=len(prepared.images),
+                message_count=len(prepared.messages),
+            )
 
             await self._semaphore.acquire()
 
@@ -1611,7 +1677,7 @@ class LLMRuntime:
             try:
                 output = await asyncio.wait_for(
                     asyncio.shield(future),
-                    timeout=self._settings.timeout_seconds,
+                    timeout=self._inference_timeout_seconds(),
                 )
 
             except TimeoutError as exc:

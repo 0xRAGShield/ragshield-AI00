@@ -8,17 +8,27 @@ class BGE_M3_Embedding:
     BGE-M3 embedding model wrapper.
 
     Responsibilities:
+
     - Load and own the embedding model.
+
     - Generate normalized document embeddings.
+
     - Generate normalized query embeddings.
+
     - Expose the embedding dimension.
 
     Forbidden responsibilities:
+
     - Chunking.
+
     - Cleaning or normalization of source text.
+
     - Vector-store operations.
+
     - Retrieval.
+
     - Reranking.
+
     - Business logic.
     """
 
@@ -47,7 +57,7 @@ class BGE_M3_Embedding:
             ) from error
 
         try:
-            dimension = self._model.get_embedding_dimension()
+            dimension = self._model.get_sentence_embedding_dimension()
         except Exception as error:
             raise RuntimeError(
                 "Failed to determine embedding dimension."
@@ -174,6 +184,7 @@ class BGE_M3_Embedding:
                 )
 
             result = [converted]
+
         else:
             result = converted
 

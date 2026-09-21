@@ -783,11 +783,11 @@ def _validate_context(
 ) -> None:
 
     if not isinstance(
-        context.query.text,
+        context.query,
         str,
     ):
         raise InvalidPromptInputError(
-            "context.query.text must be a string."
+            "context.query must be a string."
         )
 
     if not isinstance(
@@ -1229,7 +1229,7 @@ class PromptBuilder:
         # 2. Context/query consistency
         # ------------------------------------------------------------------
 
-        context_query = context.query.text
+        context_query = context.query
 
         if (
             context_query
