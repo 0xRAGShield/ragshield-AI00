@@ -911,10 +911,13 @@ class Qwen3VLBackend(IVLMBackend):
             else:
                 model_kwargs["torch_dtype"] = torch.float32
 
-            if self._settings.quantization in {
-                "4bit",
-                "8bit",
-            }:
+            if (
+                 self._device == "cuda"
+                 and self._settings.quantization in {
+                  "4bit",
+                  "8bit",
+                }
+               ):
                 try:
                     from transformers import (
                         BitsAndBytesConfig,

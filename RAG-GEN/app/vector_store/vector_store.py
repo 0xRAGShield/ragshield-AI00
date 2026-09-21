@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,6 +15,7 @@ class QdrantStore:
     Qdrant vector-store adapter.
 
     Responsibilities:
+
     - Own the Qdrant client.
     - Create and validate the configured collection.
     - Persist chunk/vector pairs.
@@ -22,6 +24,7 @@ class QdrantStore:
     - Expose collection statistics.
 
     Forbidden responsibilities:
+
     - Embedding generation.
     - Chunking.
     - Cleaning.
@@ -35,8 +38,10 @@ class QdrantStore:
     def __init__(
         self,
         collection_name: str = "ragshield_corpus",
+        mode: str = "server",
         host: str = "localhost",
         port: int = 6333,
+        local_path: str = "qdrant_data",
         vector_size: int | None = None,
     ) -> None:
         if not isinstance(collection_name, str):
@@ -46,6 +51,14 @@ class QdrantStore:
 
         if not collection_name:
             raise ValueError("collection_name cannot be empty.")
+
+        if not isinstance(mode, str):
+            raise TypeError("mode must be a string.")
+
+        mode = mode.strip().lower()
+
+        if mode not in {"server", "local"}:
+            raise ValueError("mode must be either 'server' or 'local'.")
 
         if not isinstance(host, str):
             raise TypeError("host must be a string.")
@@ -61,6 +74,14 @@ class QdrantStore:
         if port <= 0 or port > 65535:
             raise ValueError("port must be between 1 and 65535.")
 
+        if not isinstance(local_path, str):
+            raise TypeError("local_path must be a string.")
+
+        local_path = local_path.strip()
+
+        if not local_path:
+            raise ValueError("local_path cannot be empty.")
+
         if vector_size is not None:
             if not isinstance(vector_size, int) or isinstance(vector_size, bool):
                 raise TypeError("vector_size must be an integer.")
@@ -69,15 +90,22 @@ class QdrantStore:
                 raise ValueError("vector_size must be greater than zero.")
 
         self._collection_name = collection_name
+        self._mode = mode
         self._host = host
         self._port = port
+        self._local_path = local_path
         self._configured_vector_size = vector_size
 
         try:
-            self._client = QdrantClient(
-                host=self._host,
-                port=self._port,
-            )
+            if self._mode == "local":
+                self._client = QdrantClient(
+                    path=self._local_path,
+                )
+            else:
+                self._client = QdrantClient(
+                    host=self._host,
+                    port=self._port,
+                )
         except Exception as error:
             raise RuntimeError(
                 "Failed to initialize Qdrant client."
@@ -104,6 +132,7 @@ class QdrantStore:
         If it already exists, its configured vector dimension
         must match the requested dimension.
         """
+
         self._validate_vector_size(vector_size)
 
         try:
@@ -153,8 +182,10 @@ class QdrantStore:
         Persist chunks and their corresponding vectors.
 
         Ordering is positional:
+
         chunks[i] <-> vectors[i].
         """
+
         if not isinstance(chunks, list):
             raise TypeError("chunks must be a list.")
 
@@ -225,6 +256,7 @@ class QdrantStore:
         """
         Execute dense cosine-similarity search.
         """
+
         if not isinstance(query_vector, list):
             raise TypeError("query_vector must be a list.")
 
@@ -339,7 +371,9 @@ class QdrantStore:
         return vector_size
 
     @staticmethod
-    def _validate_vector_size(vector_size: int) -> None:
+    def _validate_vector_size(
+        vector_size: int,
+    ) -> None:
         if not isinstance(vector_size, int) or isinstance(vector_size, bool):
             raise TypeError("vector_size must be an integer.")
 
@@ -367,6 +401,7 @@ class QdrantStore:
             )
 
         vector_size = len(vector)
+
         cls._validate_vector_size(vector_size)
 
         return vector_size
@@ -425,3 +460,4 @@ class QdrantStore:
                 raise ValueError(
                     f"chunks[{index}].text cannot be empty."
                 )
+

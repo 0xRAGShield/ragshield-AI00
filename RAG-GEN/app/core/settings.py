@@ -23,6 +23,7 @@ class RetrievalSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     collection_name: str = "ragshield_test"
+    qdrant_mode: Literal["server", "local"] = "server"
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     default_top_k: int = Field(default=5, ge=1, le=100)
@@ -184,7 +185,7 @@ class LLMSettings(BaseModel):
     )
 
     timeout_seconds: float = Field(
-        default=60.0,
+        default=300.0,
         gt=0,
     )
 

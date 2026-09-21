@@ -59,8 +59,10 @@ def build_pipeline() -> RAGPipeline:
 
     vector_store = QdrantStore(
         collection_name=settings.retrieval.collection_name,
+        mode=settings.retrieval.qdrant_mode,
         host=settings.retrieval.qdrant_host,
         port=settings.retrieval.qdrant_port,
+        local_path=settings.retrieval.qdrant_local_path,
         vector_size=embedding_model.dimension,
     )
 
