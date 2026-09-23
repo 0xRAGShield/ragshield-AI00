@@ -1,0 +1,51 @@
+services:
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ragshield-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+      - ./qdrant_backup:/qdrant/snapshots/ragshield_test:ro
+
+  qdrant-init:
+    image: python:3.13-slim
+    container_name: ragshield-qdrant-init
+    restart: "no"
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - pip install --no-cache-dir requests && python qdrant-init.py
+    volumes:
+      - ./qdrant-init.py:/app/qdrant-init.py:ro
+      - ./qdrant_backup:/qdrant/snapshots/ragshield_test:ro
+    depends_on:
+      qdrant:
+        condition: service_started
+
+  ragshield:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ragshield
+    ports:
+      - "8000:8000"
+    environment:
+      RETRIEVAL_QDRANT_HOST: qdrant
+      RETRIEVAL_QDRANT_PORT: "6333"
+      LLM_MODEL_PATH: models/qwen3-vl-8b
+      HF_HOME: /app/.cache/huggingface
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+    depends_on:
+      qdrant-init:
+        condition: service_completed_successfully
+    #gpus: all
+    shm_size: "16gb"
+
+volumes:
+  qdrant_storage:
+    name: ragshield_qdrant_storage
