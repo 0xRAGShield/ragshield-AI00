@@ -7,6 +7,7 @@ No retrieval, ranking, prompting, or generation logic belongs here.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Sequence
@@ -255,6 +256,64 @@ class AppSettings(BaseModel):
     )
 
 
+def _env(name: str) -> str | None:
+    value = os.environ.get(name)
+
+    if value is None:
+        return None
+
+    value = value.strip()
+
+    return value or None
+
+
+def _apply_env_overrides(settings: AppSettings) -> AppSettings:
+    retrieval_updates: dict[str, object] = {}
+
+    if host := _env("RETRIEVAL_QDRANT_HOST"):
+        retrieval_updates["qdrant_host"] = host
+
+    if port := _env("RETRIEVAL_QDRANT_PORT"):
+        retrieval_updates["qdrant_port"] = int(port)
+
+    if collection := _env("RETRIEVAL_COLLECTION_NAME"):
+        retrieval_updates["collection_name"] = collection
+
+    llm_updates: dict[str, object] = {}
+
+    if model_path := _env("LLM_MODEL_PATH"):
+        llm_updates["local_weights_dir"] = model_path
+
+    if model_id := _env("LLM_MODEL_ID"):
+        llm_updates["model_id"] = model_id
+
+    if device := _env("LLM_DEVICE"):
+        llm_updates["device"] = device
+
+    if quantization := _env("LLM_QUANTIZATION"):
+        llm_updates["quantization"] = quantization
+
+    if retrieval_updates:
+        settings = settings.model_copy(
+            update={
+                "retrieval": settings.retrieval.model_copy(
+                    update=retrieval_updates
+                )
+            }
+        )
+
+    if llm_updates:
+        settings = settings.model_copy(
+            update={
+                "llm": settings.llm.model_copy(
+                    update=llm_updates
+                )
+            }
+        )
+
+    return settings
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
-    return AppSettings()
+    return _apply_env_overrides(AppSettings())
