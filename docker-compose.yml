@@ -30,6 +30,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    #image: manarabdelbaky16/ragshield-ai00:latest
     container_name: ragshield
     ports:
       - "8000:8000"
@@ -43,7 +44,7 @@ services:
     depends_on:
       qdrant-init:
         condition: service_completed_successfully
-    #gpus: all
+    # gpus: all
     shm_size: "16gb"
 
 volumes:

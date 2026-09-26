@@ -9,5 +9,6 @@ rag-grad
 *.slnx
 RAG-GEN/qdrant_backup
 RAG-GEN/tests
+RAG-GEN/models
 data/documents
 data/images
