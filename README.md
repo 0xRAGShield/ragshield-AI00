@@ -1,3 +1,4 @@
+
 # RAGShield
 
 RAGShield is a FastAPI-based retrieval-augmented generation (RAG) service. It embeds queries with **BGE-M3**, searches a **Qdrant** vector store, re-ranks results with a **Cross-Encoder**, and generates answers with a locally hosted **Qwen3-VL-8B-Instruct** model.
@@ -52,7 +53,11 @@ POST /query
 
 ### Model weights (required)
 
-Download and place weights locally before building or running. Models are **not** fetched at runtime in Docker (`HF_HUB_OFFLINE=1`).
+**For local Python runs:** download and place the model weights under `RAG-GEN/models/`.
+
+**For Docker runs:** model weights are **not stored in the Git repository**. The Dockerfile automatically downloads all three models during the first Docker image build.
+
+No manual model download is required for Docker.
 
 | Model      | Hugging Face ID                          | Local path                                               |
 | ---------- | ---------------------------------------- | -------------------------------------------------------- |
@@ -136,11 +141,20 @@ Reads from `data/` at the repository root and indexes into the `ragshield_test` 
 
 ## Run with Docker
 
-### 1. Pull the RAGShield image
+### 1. Clone the Repository
 
 ```powershell
-docker pull manarabdelbaky16/ragshield-ai00:latest
+git clone https://github.com/0xRAGShield/ragshield-AI00.git
+cd ragshield-AI00
 ```
+
+Switch to the required branch if necessary:
+
+
+```powershell
+git checkout basic
+```
+
 
 ### 2. Required project files
 
@@ -149,17 +163,29 @@ Clone or copy the repository so these files are present:
 - `docker-compose.yml`
 - `Dockerfile`
 - `RAG-GEN/qdrant_backup`
-- `qdrant_init.py `
+- `qdrant-init.py `
 
 ### 3. Start the project
 
 ```powershell
-docker compose up -d
+docker compose up --build
 ```
 
-The RAGShield Docker image already contains all required model weights (BGE-M3, Cross-Encoder, and Qwen3-VL-8B-Instruct). Teammates do **not** need to download models separately.
 
-Docker Compose starts the **RAGShield API** and **Qdrant** services and runs Qdrant initialization/restore on first boot.
+The first build will:
+
+1. Install the application dependencies.
+2. Build the CUDA-enabled RAGShield image.
+3. Download BGE-M3.
+4. Download the Cross-Encoder.
+5. Download Qwen3-VL-8B-Instruct.
+6. Start Qdrant.
+7. Restore the Qdrant snapshot if required.
+8. Start the RAGShield API.
+
+No Docker Hub image is required.
+
+No model weights need to be downloaded manually.
 
 Qdrant data is stored in the persistent Docker volume:
 
@@ -168,6 +194,71 @@ ragshield_qdrant_storage
 ```
 
 API: `http://localhost:8000`
+
+After the first successful build, the project can be started with:
+
+
+```powershell
+docker compose up -d
+```
+
+
+### 4. Check the running containers
+
+
+```powershell
+docker ps
+```
+
+
+The main running containers are:
+
+ragshield
+ragshield-qdrant
+
+The ragshield-qdrant-init container may appear as Exited after successfully completing the initialization/restore process.
+
+### 5. Check RAGShield startup
+
+Qwen3-VL-8B may take some time to load during startup.
+
+
+
+```powershell
+docker logs ragshield --tail 30
+```
+
+Wait until the application reports:
+
+Application startup complete.
+
+Then verify the API:
+
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+```
+
+### 6. Stop the project
+
+
+
+```powershell
+docker compose down
+```
+
+The persistent Qdrant volume remains available for the next startup.
+
+
+To remove the containers **and** the persistent Qdrant volume:
+
+
+```powershell
+docker compose down -v
+```
+
+
+<pre class="overflow-visible! px-0!" data-start="8355" data-end="8395"><div class="relative w-full mt-4 mb-1"><div class=""><div class="contents"><div class="border border-token-border-light border-radius-3xl corner-superellipse/1.1 rounded-3xl"><div class="relative h-full w-full border-radius-3xl bg-(--code-block-surface) corner-superellipse/1.1 overflow-clip rounded-3xl [--code-block-surface:var(--bg-elevated-secondary)] dark:[--code-block-surface:var(--composer-surface-primary)] lxnfua_clipPathFallback"><div class="pointer-events-none absolute inset-x-4 top-12 bottom-4"><div class="pointer-events-none sticky z-40 shrink-0 z-1!"><div class="sticky bg-token-border-light"></div></div></div></div></div></div></div></div></pre>
 
 ## API
 
