@@ -903,7 +903,7 @@ class Qwen3VLBackend(IVLMBackend):
             }
 
             if self._device == "cuda":
-                model_kwargs["device_map"] = "auto"
+                model_kwargs["device_map"] = {"": 0}
 
                 if self._settings.quantization == "none":
                     model_kwargs["torch_dtype"] = torch.bfloat16
@@ -1546,9 +1546,16 @@ class LLMRuntime:
         trace_id: str,
         diagnostics: dict[str, Any],
     ) -> BackendOutput:
+
+        print(">>> LLM: BEFORE SEMAPHORE", flush=True)
+
         await self._semaphore.acquire()
 
+        print(">>> LLM: AFTER SEMAPHORE", flush=True)
+
         loop = asyncio.get_running_loop()
+
+        print(">>> LLM: BEFORE EXECUTOR", flush=True)
 
         future = loop.run_in_executor(
             self._executor,
@@ -1560,13 +1567,21 @@ class LLMRuntime:
             ),
         )
 
+        print(">>> LLM: AFTER EXECUTOR", flush=True)
+
         try:
-            return await asyncio.wait_for(
+            print(">>> LLM: BEFORE WAIT", flush=True)
+
+            result = await asyncio.wait_for(
                 asyncio.shield(future),
                 timeout=self._inference_timeout_seconds(),
             )
 
+            print(">>> LLM: AFTER WAIT", flush=True)
+
         except TimeoutError as exc:
+            print(">>> LLM: TIMEOUT", flush=True)
+
             asyncio.create_task(
                 self._release_after_completion(
                     future
@@ -1580,6 +1595,8 @@ class LLMRuntime:
             ) from exc
 
         except asyncio.CancelledError:
+            print(">>> LLM: CANCELLED", flush=True)
+
             asyncio.create_task(
                 self._release_after_completion(
                     future
@@ -1589,10 +1606,17 @@ class LLMRuntime:
             raise
 
         except LLMError:
+            print(">>> LLM: LLM ERROR", flush=True)
+
             self._semaphore.release()
             raise
 
         except Exception as exc:
+            print(
+                f">>> LLM: EXCEPTION: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+
             self._semaphore.release()
 
             raise LLMBackendError(
@@ -1601,7 +1625,13 @@ class LLMRuntime:
             ) from exc
 
         else:
+            print(">>> LLM: BEFORE RELEASE", flush=True)
+
             self._semaphore.release()
+
+            print(">>> LLM: AFTER RELEASE", flush=True)
+
+            return result
 
     async def _release_after_completion(
         self,
@@ -1819,18 +1849,27 @@ class LLMRuntime:
         modality: Modality,
         trace_id: str,
     ) -> BackendOutput:
+
+        print(">>> LLM: ENTER _INVOKE_GENERATE", flush=True)
+
         if not self._backend.is_loaded:
             raise ModelNotReadyError(
                 "VLM backend is not loaded"
             )
 
         try:
-            return self._backend.generate(
+            print(">>> LLM: BEFORE BACKEND.GENERATE", flush=True)
+
+            result = self._backend.generate(
                 request,
                 max_new_tokens=max_new_tokens,
                 modality=modality,
                 trace_id=trace_id,
             )
+
+            print(">>> LLM: AFTER BACKEND.GENERATE", flush=True)
+
+            return result
 
         except LLMError:
             raise

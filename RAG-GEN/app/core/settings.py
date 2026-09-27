@@ -27,6 +27,7 @@ class RetrievalSettings(BaseModel):
     qdrant_mode: Literal["server", "local"] = "server"
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
+    qdrant_local_path: str = "qdrant_data"
     default_top_k: int = Field(default=5, ge=1, le=100)
     max_top_k: int = Field(default=20, ge=1, le=100)
 

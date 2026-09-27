@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import time
 import logging
 import uuid
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,10 +13,12 @@ from app.generation.llm.llm import (
     LLMRequest,
     LLMRuntime,
 )
+
 from app.generation.prompts.prompt_builder import (
     PromptBuilder,
     PromptRequest,
 )
+
 from app.models.rag_models import (
     AssembledContext,
     LLMPrompt,
@@ -22,6 +26,7 @@ from app.models.rag_models import (
     RetrievalResult,
     RerankedResult,
 )
+
 from app.retrieval.reranker import Reranker
 from app.retrieval.retriever import Retriever
 from app.context.context_builder import ContextBuilder
@@ -33,7 +38,6 @@ logger = logging.getLogger(
 
 
 class PipelineError(RuntimeError):
-
     def __init__(
         self,
         message: str,
@@ -42,9 +46,7 @@ class PipelineError(RuntimeError):
         trace_id: str,
         cause: BaseException | None = None,
     ) -> None:
-
         super().__init__(message)
-
         self.stage = stage
         self.trace_id = trace_id
         self.cause = cause
@@ -55,26 +57,17 @@ class PipelineError(RuntimeError):
 
 @dataclass(frozen=True)
 class RAGPipelineResult:
-
     trace_id: str
-
     query: str
-
     retrieval: RetrievalResult
-
     reranking: RerankedResult
-
     context: AssembledContext
-
     prompt: LLMPrompt
-
     generation: GenerationResult
-
     is_degraded: bool
 
 
 class RAGPipeline:
-
     def __init__(
         self,
         *,
@@ -128,7 +121,6 @@ class RAGPipeline:
         return self._started and not self._closed
 
     async def startup(self) -> None:
-
         if self._closed:
             raise RuntimeError(
                 "Pipeline has already been closed."
@@ -142,7 +134,6 @@ class RAGPipeline:
         self._started = True
 
     async def shutdown(self) -> None:
-
         if self._closed:
             return
 
@@ -204,14 +195,24 @@ class RAGPipeline:
 
         trace_id = uuid.uuid4().hex
 
+        # ============================================================
+        # RETRIEVAL
+        # ============================================================
+
         try:
             retrieval_started = time.perf_counter()
 
-            retrieval_query = RetrievalQuery(text=query, top_k=top_k)
-            retrieval = await self._retriever.retrieve(retrieval_query)
+            retrieval_query = RetrievalQuery(
+                text=query,
+                top_k=top_k,
+            )
+
+            retrieval = await self._retriever.retrieve(
+                retrieval_query
+            )
 
             retrieval_latency_ms = (
-               time.perf_counter() - retrieval_started
+                time.perf_counter() - retrieval_started
             ) * 1000.0
 
         except Exception as exc:
@@ -222,17 +223,37 @@ class RAGPipeline:
                 cause=exc,
             ) from exc
 
+        # ============================================================
+        # RERANKING
+        # ============================================================
+
         try:
+            print(
+                ">>> BEFORE RERANK",
+                flush=True,
+            )
+
             reranking_started = time.perf_counter()
 
             reranking = await self._reranker.rerank(
-               retrieval,
-               top_n=top_n,
+                retrieval,
+                top_n=top_n,
+            )
+
+            print(
+                ">>> AFTER RERANK",
+                flush=True,
             )
 
             reranking_latency_ms = (
-              time.perf_counter() - reranking_started
+                time.perf_counter() - reranking_started
             ) * 1000.0
+
+            print(
+                f">>> RERANK TIME: "
+                f"{reranking_latency_ms:.2f} ms",
+                flush=True,
+            )
 
         except Exception as exc:
             raise PipelineError(
@@ -242,14 +263,36 @@ class RAGPipeline:
                 cause=exc,
             ) from exc
 
+        # ============================================================
+        # CONTEXT
+        # ============================================================
+
         try:
+            print(
+                ">>> BEFORE CONTEXT",
+                flush=True,
+            )
+
             context_started = time.perf_counter()
 
-            context = self._context_builder.build(reranking)
+            context = self._context_builder.build(
+                reranking
+            )
 
             context_latency_ms = (
-              time.perf_counter() - context_started
+                time.perf_counter() - context_started
             ) * 1000.0
+
+            print(
+                ">>> AFTER CONTEXT",
+                flush=True,
+            )
+
+            print(
+                f">>> CONTEXT TIME: "
+                f"{context_latency_ms:.2f} ms",
+                flush=True,
+            )
 
         except Exception as exc:
             raise PipelineError(
@@ -259,31 +302,63 @@ class RAGPipeline:
                 cause=exc,
             ) from exc
 
+        # ============================================================
+        # PROMPT
+        # ============================================================
+
         try:
+            print(
+                ">>> BEFORE PROMPT",
+                flush=True,
+            )
+
             prompt_started = time.perf_counter()
 
             prompt = self._prompt_builder.build(
-             query,
-             context,
-             request=prompt_request,
-             )
+                query,
+                context,
+                request=prompt_request,
+            )
 
             prompt_latency_ms = (
-             time.perf_counter() - prompt_started
-              ) * 1000.0
+                time.perf_counter() - prompt_started
+            ) * 1000.0
+
+            print(
+                ">>> AFTER PROMPT",
+                flush=True,
+            )
+
+            print(
+                f">>> PROMPT TIME: "
+                f"{prompt_latency_ms:.2f} ms",
+                flush=True,
+            )
+
         except Exception as exc:
             logger.exception(
                 "Prompt stage failed. trace_id=%s",
                 trace_id,
             )
+
             raise PipelineError(
-                f"Prompt stage failed: {type(exc).__name__}: {exc}",
+                f"Prompt stage failed: "
+                f"{type(exc).__name__}: {exc}",
                 stage="prompt",
                 trace_id=trace_id,
                 cause=exc,
             ) from exc
 
+        # ============================================================
+        # LLM REQUEST CONSTRUCTION
+        # ============================================================
+
         try:
+            print(
+                ">>> BEFORE LLM REQUEST",
+                flush=True,
+            )
+
             llm_messages = [
                 LLMChatMessage(
                     role=message.role,
@@ -298,6 +373,11 @@ class RAGPipeline:
                 trace_id=trace_id,
             )
 
+            print(
+                ">>> AFTER LLM REQUEST",
+                flush=True,
+            )
+
         except Exception as exc:
             raise PipelineError(
                 "LLM request construction failed.",
@@ -306,24 +386,52 @@ class RAGPipeline:
                 cause=exc,
             ) from exc
 
+        # ============================================================
+        # LLM GENERATION
+        # ============================================================
+
         try:
+            print(
+                ">>> BEFORE LLM",
+                flush=True,
+            )
+
             llm_started = time.perf_counter()
 
-            generation = await self._llm.generate(llm_request)
+            generation = await self._llm.generate(
+                llm_request
+            )
 
             llm_latency_ms = (
-              time.perf_counter() - llm_started
-             ) * 1000.0
-            
+                time.perf_counter() - llm_started
+            ) * 1000.0
+
             print(
-             "\n=== RAG LATENCY ==="
-             f"\nRetrieval: {retrieval_latency_ms:.2f} ms"
-             f"\nReranking: {reranking_latency_ms:.2f} ms"
-             f"\nContext: {context_latency_ms:.2f} ms"
-             f"\nPrompt: {prompt_latency_ms:.2f} ms"
-             f"\nLLM: {llm_latency_ms:.2f} ms"
-             
-           )
+                ">>> AFTER LLM",
+                flush=True,
+            )
+
+            print(
+                f">>> LLM TIME: "
+                f"{llm_latency_ms:.2f} ms",
+                flush=True,
+            )
+
+            print(
+                "\n=== RAG LATENCY ==="
+                f"\nRetrieval: "
+                f"{retrieval_latency_ms:.2f} ms"
+                f"\nReranking: "
+                f"{reranking_latency_ms:.2f} ms"
+                f"\nContext: "
+                f"{context_latency_ms:.2f} ms"
+                f"\nPrompt: "
+                f"{prompt_latency_ms:.2f} ms"
+                f"\nLLM: "
+                f"{llm_latency_ms:.2f} ms",
+                flush=True,
+            )
+
         except Exception as exc:
             raise PipelineError(
                 "LLM generation failed.",
@@ -331,6 +439,10 @@ class RAGPipeline:
                 trace_id=trace_id,
                 cause=exc,
             ) from exc
+
+        # ============================================================
+        # DEGRADED STATUS
+        # ============================================================
 
         is_degraded = bool(
             retrieval.is_degraded
@@ -340,6 +452,10 @@ class RAGPipeline:
             or context.is_degraded
             or prompt.is_degraded
         )
+
+        # ============================================================
+        # RESULT
+        # ============================================================
 
         return RAGPipelineResult(
             trace_id=trace_id,
@@ -366,6 +482,7 @@ class RAGPipeline:
         if callable(close):
             try:
                 close()
+
             except Exception:
                 logger.exception(
                     "Failed to close pipeline component."
