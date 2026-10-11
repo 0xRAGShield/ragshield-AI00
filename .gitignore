@@ -1,0 +1,36 @@
+﻿# Model weights and checkpoints
+models/
+**/checkpoint-*/
+**/checkpoints/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.keras
+*.h5
+
+# Sensitive datasets
+data/sensitive/openpii-300k/
+data/sensitive/processed/sitr-arabic-pii/
+data/sensitive/processed/combined/*
+!data/sensitive/processed/combined/label_mapping.json
+
+# Python cache and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs and training outputs
+*.log
+runs/
+wandb/
+mlruns/
+.ipynb_checkpoints/
