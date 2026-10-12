@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import traceback
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +18,10 @@ from app.retrieval.ranker_model import CrossEncoderRerankerModel
 from app.retrieval.reranker import Reranker
 from app.retrieval.retriever import Retriever
 from app.vector_store.vector_store import QdrantStore
+from routers.query_router import (
+    classify_query,
+    generate_chat_response,
+)
 
 
 class QueryRequest(BaseModel):
@@ -110,6 +115,38 @@ async def health() -> dict[str, str]:
 
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest) -> QueryResponse:
+    route = await asyncio.to_thread(
+        classify_query,
+        request.query,
+    )
+
+    if route == "CHAT":
+        try:
+            answer = await asyncio.to_thread(
+                generate_chat_response,
+                request.query,
+            )
+        except Exception as exc:
+            print(
+                f"Chat response error: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            traceback.print_exc()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Conversational response failed.",
+            ) from exc
+
+        return QueryResponse(
+            answer=answer,
+            trace_id=uuid.uuid4().hex,
+            degraded=False,
+            retrieved_candidates=0,
+            reranked_candidates=0,
+            evidence_items=0,
+        )
+
     if pipeline is None:
         raise HTTPException(
             status_code=503,
