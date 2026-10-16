@@ -28,27 +28,37 @@ from transformers import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Must exist after running prepare_bilingual_pii.py
+
+# New merged dataset
 PROCESSED_DATASET_DIR = (
     PROJECT_ROOT
     / "data"
     / "sensitive"
     / "processed"
-    / "combined_masked_sitr"
+    / "V3OFcombined"
 )
 
-# Keep the previous model untouched
+# Keep the original label mapping as the source of truth.
+# The merge output currently contains metadata and summary;
+# do not assume it contains label_mapping.json.
+LABEL_MAPPING_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "sensitive"
+    / "processed"
+    / "V3OFcombined"
+    / "label_mapping.json"
+)
+
+# Save the newly trained model separately.
 MODEL_OUTPUT_DIR = (
     PROJECT_ROOT
     / "models"
     / "sensitive"
-    / "bilingual_pii_xlmr_masked_sitr"
+    /  "bilingual_pii_xlmr_V3OFcombined_run2"
 )
 
-LABEL_MAPPING_PATH = (
-    PROCESSED_DATASET_DIR / "label_mapping.json"
-)
-
+# Keep this unchanged until we verify tokenizer compatibility.
 MODEL_NAME = "Davlan/xlm-roberta-base-ner-hrl"
 
 
@@ -97,14 +107,14 @@ def load_label_mapping():
         mapping = json.load(file)
 
     label2id = {
-        label: int(label_id)
-        for label, label_id in mapping["label2id"].items()
+    str(label): int(label_id)
+    for label, label_id in mapping["label2id"].items()
     }
 
     id2label = {
-        int(label_id): label
-        for label, label_id in mapping["id2label"].items()
-    }
+    int(label_id): label
+    for label_id, label in mapping["id2label"].items()
+     }
 
     num_labels = len(label2id)
 

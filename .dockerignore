@@ -9,15 +9,11 @@
 
 !models/
 !models/sensitive/
-!models/sensitive/bilingual_pii_xlmr/
-!models/sensitive/bilingual_pii_xlmr/config.json
-!models/sensitive/bilingual_pii_xlmr/model.safetensors
-!models/sensitive/bilingual_pii_xlmr/tokenizer.json
-!models/sensitive/bilingual_pii_xlmr/tokenizer_config.json
-!models/sensitive/bilingual_pii_xlmr/label_mapping.json
-
-!data/
-!data/sensitive/
-!data/sensitive/processed/
-!data/sensitive/processed/combined/
-!data/sensitive/processed/combined/label_mapping.json
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/config.json
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/label_mapping.json
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/checkpoint-31512/
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/checkpoint-31512/model.safetensors
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/checkpoint-21008/
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/checkpoint-21008/tokenizer.json
+!models/sensitive/bilingual_pii_xlmr_V3OFcombined/checkpoint-21008/tokenizer_config.json

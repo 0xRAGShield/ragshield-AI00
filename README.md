@@ -22,7 +22,7 @@ The module is designed to operate independently of the RAG retrieval and generat
 
 The detection model is based on XLM-RoBERTa and is fine-tuned for token classification.
 
-- **Model directory:** `models/sensitive/bilingual_pii_xlmr`
+- **Model directory:** `models/sensitive/bilingual_pii_xlmr_V3OFcombined`
 - **Architecture:** XLM-RoBERTa Token Classification (NER)
 - **Supported languages:** Arabic and English
 - **Label configuration:** 35 BIO labels representing 17 entity types, including `O`.
@@ -37,7 +37,7 @@ The model, tokenizer, and configuration are loaded from local files. The runtime
 
 The canonical label mapping is maintained at:
 
-`data/sensitive/processed/combined/label_mapping.json`
+`models/sensitive/bilingual_pii_xlmr_V3OFcombined/label_mapping.json`
 
 The model configuration, tokenizer, classifier weights, and canonical label mapping must remain compatible.
 
@@ -61,10 +61,10 @@ The recorded combined dataset contains:
 
 | Split           |         Examples |
 | --------------- | ---------------: |
-| Training        |           34,032 |
-| Validation      |            8,849 |
-| Test            |            3,890 |
-| **Total** | **46,771** |
+| Training        |       `42,016` |
+| Validation      |        `9,852` |
+| Test            |        `4,903` |
+| **Total** | **56,771** |
 
 These counts describe the prepared dataset splits. Model performance must be evaluated separately using metrics measured on the test set.
 
@@ -230,16 +230,17 @@ Each entity includes:
 
 Default checkpoint (local only):
 
-`models/sensitive/bilingual_pii_xlmr/bilingual_pii_xlmr`
+`models/sensitive/bilingual_pii_xlmr_V3OFcombined`
 
 - Architecture: XLM-RoBERTa token classification (`Davlan/xlm-roberta-base-ner-hrl` fine-tune)
-- Languages: Arabic + English (SITR Arabic PII + OpenPII English)
+- Languages: Arabic + English (SITR Arabic PII + OpenPII English + RAGShield PII)
+- Training dataset: `data/sensitive/processed/V3OFcombined`
 - 35 BIO labels / 17 entity types
-- Canonical mapping: `data/sensitive/processed/combined/label_mapping.json`
+- Canonical mapping: `models/sensitive/bilingual_pii_xlmr_V3OFcombined/label_mapping.json`
 
 The runtime loads this directory with `local_files_only=True`. It does not download the base model.
 
-If `config.json` is missing next to `model.safetensors`, the loader uses a compatible `checkpoint-*/config.json` whose `id2label` matches the canonical 35-label mapping.
+This export is split: `config.json` is at the model root, tokenizer files are under `checkpoint-21008`, and `model.safetensors` is under `checkpoint-31512`. The loader reads those pieces together and does not fall back to an older checkpoint.
 
 ## Configuration
 
@@ -248,7 +249,7 @@ from app.sensitive import SensitiveDataDetector, SensitiveDataDetectorConfig
 
 detector = SensitiveDataDetector(
     config=SensitiveDataDetectorConfig(
-        model_name_or_path="models/sensitive/bilingual_pii_xlmr/bilingual_pii_xlmr",
+        model_name_or_path="models/sensitive/bilingual_pii_xlmr_V3OFcombined",
         device="auto",              # "cpu", "cuda", or "auto"
         confidence_threshold=0.5,
         max_length=512,
@@ -284,3 +285,23 @@ app/sensitive/
 ├── labels.py     # Label vocabulary + normalization
 └── offsets.py    # Character offset alignment helpers
 ```
+
+# Evaluation
+
+Test Set
+
+### Overall F1 :
+
+96.97%
+
+### Sensitive Macro F1 :
+
+97.66%
+
+### Precision:
+
+96.36%
+
+### Recall:
+
+97.58%

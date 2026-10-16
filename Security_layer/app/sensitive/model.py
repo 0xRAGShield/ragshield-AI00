@@ -30,6 +30,16 @@ _WEIGHT_FILENAMES = ("model.safetensors", "pytorch_model.bin")
 _TOKENIZER_FILENAMES = ("tokenizer.json", "tokenizer_config.json")
 
 
+@dataclass(frozen=True)
+class ModelArtifacts:
+    """Local files required for offline token-classification inference."""
+
+    root_dir: Path
+    weights_dir: Path
+    tokenizer_dir: Path
+    config_dir: Path
+
+
 class SensitiveDataModelError(RuntimeError):
     """Raised when the NER backend cannot load or run inference."""
 
@@ -120,14 +130,105 @@ def _prefer_weights_directory(directory: Path) -> Path:
     if _has_weight_file(directory):
         return directory
 
+    nested = directory / directory.name
+    if nested.is_dir() and _has_weight_file(nested):
+        return nested
+
     nested_matches = [
         child
         for child in directory.iterdir()
-        if child.is_dir() and _has_weight_file(child)
+        if child.is_dir()
+        and not child.name.startswith("checkpoint-")
+        and _has_weight_file(child)
     ]
     if len(nested_matches) == 1:
         return nested_matches[0]
     return directory
+
+
+def _checkpoint_sort_key(name: str) -> int:
+    suffix = name.split("-")[-1]
+    return int(suffix) if suffix.isdigit() else -1
+
+
+def _search_roots(model_dir: Path) -> list[Path]:
+    roots = [model_dir]
+    if model_dir.name.startswith("checkpoint-") and model_dir.parent.is_dir():
+        roots.append(model_dir.parent)
+    return roots
+
+
+def _checkpoint_dirs(root: Path) -> list[Path]:
+    if not root.is_dir():
+        return []
+    return sorted(
+        [
+            child
+            for child in root.iterdir()
+            if child.is_dir() and child.name.startswith("checkpoint-")
+        ],
+        key=lambda path: _checkpoint_sort_key(path.name),
+    )
+
+
+def _find_weights_dir(model_dir: Path) -> Path | None:
+    for root in _search_roots(model_dir):
+        if _has_weight_file(root):
+            return root
+        checkpoints = [path for path in _checkpoint_dirs(root) if _has_weight_file(path)]
+        if checkpoints:
+            return checkpoints[-1]
+    return None
+
+
+def _has_tokenizer_files(directory: Path) -> bool:
+    return any((directory / name).is_file() for name in _TOKENIZER_FILENAMES)
+
+
+def _find_tokenizer_dir(model_dir: Path, *, weights_dir: Path | None) -> Path | None:
+    candidates: list[Path] = []
+    if weights_dir is not None:
+        candidates.append(weights_dir)
+    for root in _search_roots(model_dir):
+        candidates.append(root)
+        candidates.extend(reversed(_checkpoint_dirs(root)))
+    for candidate in candidates:
+        if _has_tokenizer_files(candidate):
+            return candidate
+    return None
+
+
+def locate_model_artifacts(model_dir: Path) -> ModelArtifacts:
+    """
+    Resolve config, tokenizer, and weights for a local checkpoint tree.
+
+    The V3 export stores ``config.json`` at the model root, tokenizer files in
+    one ``checkpoint-*`` directory, and ``model.safetensors`` in another.
+    Missing pieces are reported instead of falling back to a different model.
+    """
+    weights_dir = _find_weights_dir(model_dir)
+    tokenizer_dir = _find_tokenizer_dir(model_dir, weights_dir=weights_dir)
+
+    missing: list[str] = []
+    if weights_dir is None:
+        missing.append(" or ".join(_WEIGHT_FILENAMES))
+    if tokenizer_dir is None:
+        missing.append("tokenizer.json or tokenizer_config.json")
+    if missing:
+        raise SensitiveDataModelError(
+            "Fine-tuned NER model is incomplete at "
+            f"'{model_dir}'. Missing: {', '.join(missing)}. "
+            "Searched the model directory and checkpoint-* subdirectories. "
+            "Refusing to download Davlan/xlm-roberta-base-ner-hrl or load an older checkpoint."
+        )
+
+    config_dir = find_model_config_dir(model_dir)
+    return ModelArtifacts(
+        root_dir=model_dir,
+        weights_dir=weights_dir,
+        tokenizer_dir=tokenizer_dir,
+        config_dir=config_dir,
+    )
 
 
 def _label_maps_from_config_payload(payload: dict[str, object]) -> tuple[dict[int, str], dict[str, int]]:
@@ -153,55 +254,39 @@ def _config_matches_canonical(payload: dict[str, object]) -> bool:
 
 
 def find_model_config_dir(model_dir: Path) -> Path:
-    config_path = model_dir / "config.json"
-    if config_path.is_file():
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-        if not _config_matches_canonical(payload):
-            raise SensitiveDataModelError(
-                f"Model config at '{config_path}' does not match the canonical 35-label mapping."
-            )
-        return model_dir
+    config_candidates: list[Path] = []
+    for root in _search_roots(model_dir):
+        config_candidates.append(root / "config.json")
+        for checkpoint in _checkpoint_dirs(root):
+            config_candidates.append(checkpoint / "config.json")
 
-    checkpoint_configs = sorted(
-        model_dir.glob("checkpoint-*/config.json"),
-        key=lambda path: _checkpoint_sort_key(path.parent.name),
-    )
-    compatible = []
-    for config_file in checkpoint_configs:
+    compatible: list[Path] = []
+    mismatched: list[Path] = []
+    for config_path in config_candidates:
+        if not config_path.is_file():
+            continue
         try:
-            payload = json.loads(config_file.read_text(encoding="utf-8"))
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
         if _config_matches_canonical(payload):
-            compatible.append(config_file.parent)
+            compatible.append(config_path.parent)
+        else:
+            mismatched.append(config_path)
 
     if compatible:
-        return compatible[-1]
+        return compatible[0]
+
+    if mismatched:
+        raise SensitiveDataModelError(
+            f"Model config at '{mismatched[0]}' does not match the canonical 35-label mapping."
+        )
 
     raise SensitiveDataModelError(
-        "Missing Hugging Face config.json next to the fine-tuned weights at "
+        "Missing Hugging Face config.json for the fine-tuned weights at "
         f"'{model_dir}'. Expected config.json in that directory or in a "
         "checkpoint-* subdirectory whose id2label matches the canonical 35-label mapping."
     )
-
-
-def _checkpoint_sort_key(name: str) -> int:
-    suffix = name.split("-")[-1]
-    return int(suffix) if suffix.isdigit() else -1
-
-
-def _require_local_model_files(model_dir: Path) -> None:
-    missing: list[str] = []
-    if not _has_weight_file(model_dir):
-        missing.append(" or ".join(_WEIGHT_FILENAMES))
-    if not any((model_dir / name).is_file() for name in _TOKENIZER_FILENAMES):
-        missing.append("tokenizer.json or tokenizer_config.json")
-    if missing:
-        raise SensitiveDataModelError(
-            "Fine-tuned NER model is incomplete at "
-            f"'{model_dir}'. Missing: {', '.join(missing)}. "
-            "Refusing to download Davlan/xlm-roberta-base-ner-hrl or any other remote checkpoint."
-        )
 
 
 def _config_label_maps(model: PreTrainedModel) -> tuple[dict[int, str], dict[str, int]]:
@@ -242,23 +327,23 @@ class XLMRobertaNERModel:
     def __init__(self, config: SensitiveDataModelConfig | None = None) -> None:
         self._config = config or SensitiveDataModelConfig()
         model_dir = resolve_local_model_path(self._config.model_name_or_path)
-        _require_local_model_files(model_dir)
-        config_dir = find_model_config_dir(model_dir)
-        self._model_name = str(model_dir)
+        artifacts = locate_model_artifacts(model_dir)
+        self._model_name = str(artifacts.root_dir)
         self._device = resolve_device(self._config.device)
+        config_dir = artifacts.config_dir
 
         try:
             model_config = AutoConfig.from_pretrained(
-                str(config_dir),
+                str(artifacts.config_dir),
                 local_files_only=True,
             )
             self._tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(
-                str(model_dir),
+                str(artifacts.tokenizer_dir),
                 local_files_only=True,
                 use_fast=True,
             )
             self._model: PreTrainedModel = AutoModelForTokenClassification.from_pretrained(
-                str(model_dir),
+                str(artifacts.weights_dir),
                 config=model_config,
                 local_files_only=True,
             )

@@ -25,6 +25,7 @@ from app.sensitive.model import (
     SensitiveDataModelError,
     XLMRobertaNERModel,
     get_shared_ner_model,
+    locate_model_artifacts,
 )
 from app.sensitive.offsets import TokenAnnotation, align_entity_span, reconstruct_entities
 
@@ -98,7 +99,7 @@ def test_align_entity_span_recovers_leading_whitespace() -> None:
 
 
 def test_detector_returns_exact_offsets_with_fake_backend() -> None:
-    chunk = "Patient Omar visited Cairo Hospital."
+    chunk = "Patient Omar visited 15 Tahrir Street."
     fake_model = FakeNERModel(
         {
             chunk: [
@@ -110,10 +111,10 @@ def test_detector_returns_exact_offsets_with_fake_backend() -> None:
                     score=0.98,
                 ),
                 RawEntityPrediction(
-                    text="Cairo Hospital",
+                    text="15 Tahrir Street",
                     label="ADDRESS",
                     start=21,
-                    end=35,
+                    end=37,
                     score=0.91,
                 ),
             ]
@@ -137,6 +138,7 @@ def test_detector_returns_exact_offsets_with_fake_backend() -> None:
         score=0.98,
     )
     assert result.entities[1].label == "ADDRESS"
+    assert result.entities[1].text == "15 Tahrir Street"
 
 
 def test_detector_empty_input_returns_no_entities() -> None:
@@ -257,8 +259,34 @@ def test_offline_loading_uses_local_files_only(monkeypatch, tmp_path: Path) -> N
 
 
 def test_default_model_path_is_local_bilingual_checkpoint() -> None:
-    assert "bilingual_pii_xlmr" in DEFAULT_PRETRAINED_MODEL.replace("\\", "/")
+    normalized = DEFAULT_PRETRAINED_MODEL.replace("\\", "/")
+    assert normalized.endswith("models/sensitive/bilingual_pii_xlmr_V3OFcombined")
     assert "Davlan/" not in DEFAULT_PRETRAINED_MODEL
+
+
+def test_split_checkpoint_layout_is_discovered(tmp_path: Path) -> None:
+    root = tmp_path / "bilingual_pii_xlmr_V3OFcombined"
+    weights_dir = root / "checkpoint-31512"
+    tokenizer_dir = root / "checkpoint-21008"
+    weights_dir.mkdir(parents=True)
+    tokenizer_dir.mkdir(parents=True)
+    (weights_dir / "model.safetensors").write_bytes(b"not-a-real-model")
+    (tokenizer_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    (root / "config.json").write_text(
+        __import__("json").dumps(
+            {
+                "id2label": {str(index): label for index, label in ID2LABEL.items()},
+                "label2id": dict(LABEL2ID),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    artifacts = locate_model_artifacts(root)
+    assert artifacts.root_dir == root
+    assert artifacts.weights_dir == weights_dir
+    assert artifacts.tokenizer_dir == tokenizer_dir
+    assert artifacts.config_dir == root
 
 
 def test_mocked_token_inference_english_offsets() -> None:

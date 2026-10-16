@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from app.sensitive.offsets import TokenAnnotation, reconstruct_entities
+from app.sensitive.offsets import (
+    EntitySpan,
+    TokenAnnotation,
+    canonicalize_egyptian_national_ids,
+    polish_entity_span,
+    reconstruct_entities,
+    trim_entity_boundaries,
+)
 
 
 def test_reconstruct_bio_subwords_and_invalid_i_tag() -> None:
@@ -57,3 +64,74 @@ def test_reconstruct_arabic_digits_and_punctuation() -> None:
 
 def test_reconstruct_empty_text() -> None:
     assert reconstruct_entities("", []) == []
+
+
+def test_trim_entity_boundaries_strips_wrapping_punctuation() -> None:
+    text = "تم تسجيل المريض تحت المرجع HSP-773902."
+    start = text.index("HSP-773902")
+    end = start + len("HSP-773902.")
+    trimmed_start, trimmed_end = trim_entity_boundaries(
+        text,
+        start,
+        end,
+        "MEDICAL_RECORD_NUMBER",
+    )
+    assert text[trimmed_start:trimmed_end] == "HSP-773902"
+
+    phone_text = "The account holder can be reached through +20 (100) 765-4321."
+    phone = "+20 (100) 765-4321"
+    phone_start = phone_text.index(phone)
+    phone_end = phone_start + len(phone) + 1
+    p_start, p_end = trim_entity_boundaries(
+        phone_text,
+        phone_start,
+        phone_end,
+        "PHONE",
+    )
+    assert phone_text[p_start:p_end] == phone
+
+    wrapped = "Email=<MANAR.TEST@OUTLOOK.COM>"
+    email = "MANAR.TEST@OUTLOOK.COM"
+    e_start = wrapped.index("<")
+    e_end = wrapped.index(">") + 1
+    t_start, t_end = trim_entity_boundaries(wrapped, e_start, e_end, "EMAIL")
+    assert wrapped[t_start:t_end] == email
+
+
+def test_polish_keeps_plus_and_arabic_indic_digits() -> None:
+    text = "Call +201012345678 now"
+    span = EntitySpan("+201012345678", "PHONE", 5, 18, 0.9)
+    polished = polish_entity_span(text, span)
+    assert polished is not None
+    assert polished.text == "+201012345678"
+
+    arabic = "رقم ٠١٠١٢٣٤٥٦٧٨."
+    digits = "٠١٠١٢٣٤٥٦٧٨"
+    start = arabic.index(digits)
+    polished_ar = polish_entity_span(
+        arabic,
+        EntitySpan(digits + ".", "PHONE", start, start + len(digits) + 1, 0.9),
+    )
+    assert polished_ar is not None
+    assert polished_ar.text == digits
+    assert arabic[polished_ar.start:polished_ar.end] == digits
+
+
+def test_canonicalize_duplicate_national_id_labels() -> None:
+    number = "29805151234567"
+    text = f"رقم البطاقة القومية هو {number}."
+    start = text.index(number)
+    end = start + len(number)
+    resolved = canonicalize_egyptian_national_ids(
+        [
+            EntitySpan(number, "NATIONAL_ID", start, end, 0.8),
+            EntitySpan(number, "ID_CARD_NUMBER", start, end, 0.99),
+            EntitySpan("Ahmed", "PERSON", 0, 5, 0.9),
+        ]
+    )
+    national = [
+        span for span in resolved if span.text == number
+    ]
+    assert len(national) == 1
+    assert national[0].entity == "ID_CARD_NUMBER"
+    assert any(span.entity == "PERSON" for span in resolved)

@@ -10,11 +10,13 @@ models/
 *.keras
 *.h5
 
-# Sensitive datasets
-data/sensitive/openpii-300k/
-data/sensitive/processed/sitr-arabic-pii/
-data/sensitive/processed/combined/*
-!data/sensitive/processed/combined/label_mapping.json
+# Sensitive datasets and local data
+data/sensitive/processed/ragshield_pii_dataset_audited/
+*.arrow
+
+# Evaluation reports
+reports/
+**/reports/
 
 # Python cache and environments
 __pycache__/
@@ -22,6 +24,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+.ipynb_checkpoints/
 
 # Secrets
 .env
@@ -33,4 +36,3 @@ venv/
 runs/
 wandb/
 mlruns/
-.ipynb_checkpoints/

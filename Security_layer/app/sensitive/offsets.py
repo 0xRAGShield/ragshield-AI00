@@ -1,10 +1,31 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Sequence
 
 from app.sensitive.labels import parse_bio_label
+
+
+_MERGEABLE_ENTITY_TYPES = frozenset({"ADDRESS", "PHONE"})
+_PHONE_GAP_PATTERN = re.compile(r"^[\s\d()+./-]*$")
+_ADDRESS_GAP_PATTERN = re.compile(r"^[\s,،.-]*$")
+_STRUCTURED_RULE_LABELS = frozenset(
+    {
+        "PHONE",
+        "EMAIL",
+        "CREDIT_CARD",
+        "ID_CARD_NUMBER",
+        "NATIONAL_ID",
+        "MEDICAL_RECORD_NUMBER",
+        "EMPLOYEE_ID",
+        "ADDRESS",
+    }
+)
+_NATIONAL_ID_LABELS = frozenset({"ID_CARD_NUMBER", "NATIONAL_ID"})
+_LEADING_WRAP_CHARS = frozenset("<[{(\"'\u00ab")
+_TRAILING_WRAP_CHARS = frozenset(".,;:!?)]}>\"'\u00bb\u060c\u061b\u06d4")
 
 
 @dataclass(frozen=True)
@@ -50,6 +71,74 @@ def extract_entity_text(text: str, start: int, end: int) -> str:
         raise ValueError("Invalid character span for the provided text.")
 
     return text[start:end]
+
+
+def trim_entity_boundaries(
+    text: str,
+    start: int,
+    end: int,
+    entity_type: str | None = None,
+) -> tuple[int, int]:
+    """
+    Strip wrapping punctuation that is outside the entity.
+
+    Preserves ``+`` on phone numbers, internal email/IP dots, Arabic text,
+    Arabic-Indic digits, and parentheses that belong to a phone format.
+    """
+    start, end = clamp_character_span(text, start, end)
+    start, end = trim_character_span(text, start, end)
+    entity_type = (entity_type or "").upper() or None
+
+    while end > start:
+        char = text[end - 1]
+        if char.isspace() or char in _TRAILING_WRAP_CHARS:
+            if (
+                entity_type == "PHONE"
+                and char == ")"
+                and "(" in text[start:end - 1]
+            ):
+                break
+            end -= 1
+            continue
+        break
+
+    while start < end:
+        char = text[start]
+        if entity_type == "PHONE" and char == "+":
+            break
+        if (
+            entity_type == "PHONE"
+            and char == "("
+            and ")" in text[start + 1:end]
+        ):
+            break
+        if char.isspace() or char in _LEADING_WRAP_CHARS:
+            start += 1
+            continue
+        break
+
+    return start, end
+
+
+def polish_entity_span(text: str, span: EntitySpan) -> EntitySpan | None:
+    start, end = trim_entity_boundaries(
+        text,
+        span.start,
+        span.end,
+        span.entity,
+    )
+    if end <= start:
+        return None
+    value = extract_entity_text(text, start, end)
+    if text[start:end] != value:
+        return None
+    return EntitySpan(
+        text=value,
+        entity=span.entity,
+        start=start,
+        end=end,
+        confidence=span.confidence,
+    )
 
 
 def trim_character_span(
@@ -329,6 +418,7 @@ def _finalize_span(
         return None
 
     start, end = trim_character_span(text, start, end)
+    start, end = trim_entity_boundaries(text, start, end, entity)
 
     if end <= start:
         return None
@@ -354,3 +444,231 @@ def _finalize_span(
         end=end,
         confidence=confidence,
     )
+
+
+def _spans_overlap(left: EntitySpan, right: EntitySpan) -> bool:
+    return left.start < right.end and right.start < left.end
+
+
+def _same_span(left: EntitySpan, right: EntitySpan) -> bool:
+    return (
+        left.start == right.start
+        and left.end == right.end
+        and left.entity == right.entity
+    )
+
+
+def _extend_span(
+    text: str,
+    current: EntitySpan,
+    incoming: EntitySpan,
+) -> EntitySpan:
+    start = min(current.start, incoming.start)
+    end = max(current.end, incoming.end)
+    scores = [current.confidence, incoming.confidence]
+    return EntitySpan(
+        text=text[start:end],
+        entity=current.entity,
+        start=start,
+        end=end,
+        confidence=sum(scores) / len(scores),
+    )
+
+
+def merge_adjacent_spans(
+    text: str,
+    spans: Sequence[EntitySpan],
+) -> list[EntitySpan]:
+    """
+    Join adjacent ADDRESS or PHONE fragments using the original text.
+
+    PERSON and other entity types are left as separate spans.
+    """
+    if not isinstance(text, str):
+        raise TypeError("text must be a string.")
+    if not spans:
+        return []
+
+    ordered = sorted(spans, key=lambda span: (span.start, span.end, span.entity))
+    merged: list[EntitySpan] = []
+
+    for span in ordered:
+        if not merged:
+            merged.append(span)
+            continue
+
+        previous = merged[-1]
+        if previous.entity != span.entity or span.entity not in _MERGEABLE_ENTITY_TYPES:
+            merged.append(span)
+            continue
+
+        if span.start <= previous.end:
+            merged[-1] = _extend_span(text, previous, span)
+            continue
+
+        gap = text[previous.end:span.start]
+        can_merge = (
+            span.entity == "PHONE"
+            and bool(_PHONE_GAP_PATTERN.fullmatch(gap))
+        ) or (
+            span.entity == "ADDRESS"
+            and bool(_ADDRESS_GAP_PATTERN.fullmatch(gap))
+        )
+        if can_merge:
+            merged[-1] = _extend_span(text, previous, span)
+            continue
+
+        merged.append(span)
+
+    return merged
+
+
+def integrate_rule_spans(
+    model_spans: Sequence[EntitySpan],
+    rule_spans: Sequence[EntitySpan],
+) -> list[EntitySpan]:
+    """
+    Combine NER spans with rule spans.
+
+    Same-type partial overlaps are replaced by the rule span. Exact duplicate
+    spans keep the model confidence. Unrelated model entities such as PERSON
+    are kept even when a structured rule is nearby.
+    """
+    kept_model: list[EntitySpan] = []
+    for model in model_spans:
+        drop = False
+        for rule in rule_spans:
+            if not _spans_overlap(model, rule):
+                continue
+            if _same_span(model, rule):
+                drop = False
+                break
+            if model.entity == rule.entity:
+                drop = True
+                break
+            if (
+                model.entity in _NATIONAL_ID_LABELS
+                and rule.entity in _NATIONAL_ID_LABELS
+            ):
+                drop = model.entity != "ID_CARD_NUMBER"
+                break
+            if (
+                model.entity in _STRUCTURED_RULE_LABELS
+                and rule.entity in _STRUCTURED_RULE_LABELS
+            ):
+                drop = True
+                break
+        if not drop:
+            kept_model.append(model)
+
+    kept_keys = {(span.start, span.end, span.entity) for span in kept_model}
+    extra_rules = [
+        rule
+        for rule in rule_spans
+        if (rule.start, rule.end, rule.entity) not in kept_keys
+    ]
+    combined = list(kept_model) + extra_rules
+    return canonicalize_egyptian_national_ids(
+        sorted(combined, key=lambda span: (span.start, span.end, span.entity))
+    )
+
+
+def _digit_payload(value: str) -> str:
+    return "".join(char for char in value if char.isdigit())
+
+
+def canonicalize_egyptian_national_ids(
+    spans: Sequence[EntitySpan],
+) -> list[EntitySpan]:
+    """
+    Keep one canonical ID_CARD_NUMBER span when the same 14-digit Egyptian
+    national ID is also tagged NATIONAL_ID. Other labels and other spans stay.
+    """
+    national_spans = [
+        span
+        for span in spans
+        if span.entity in _NATIONAL_ID_LABELS and len(_digit_payload(span.text)) == 14
+    ]
+    if not national_spans:
+        return list(spans)
+
+    drop: set[tuple[int, int, str]] = set()
+    for left in national_spans:
+        for right in national_spans:
+            if left is right or not _spans_overlap(left, right):
+                continue
+            if _digit_payload(left.text) != _digit_payload(right.text):
+                continue
+            if left.entity == "NATIONAL_ID" and right.entity == "ID_CARD_NUMBER":
+                drop.add((left.start, left.end, left.entity))
+            elif (
+                left.entity == "NATIONAL_ID"
+                and right.entity == "NATIONAL_ID"
+                and (left.end - left.start) < (right.end - right.start)
+            ):
+                drop.add((left.start, left.end, left.entity))
+
+    return [
+        span
+        for span in spans
+        if (span.start, span.end, span.entity) not in drop
+    ]
+
+def merge_adjacent_person_spans(
+    text: str,
+    spans: list[EntitySpan],
+) -> list[EntitySpan]:
+    """
+    Merge conservatively split PERSON spans when:
+    - Both spans are PERSON.
+    - Only whitespace separates them.
+    - One span contains one token and the other contains multiple tokens.
+
+    Original-text offsets are preserved.
+    """
+    ordered = sorted(spans, key=lambda span: (span.start, span.end))
+    merged: list[EntitySpan] = []
+
+    for span in ordered:
+        if not (0 <= span.start < span.end <= len(text)):
+            merged.append(span)
+            continue
+
+        if text[span.start:span.end] != span.text:
+            merged.append(span)
+            continue
+
+        if merged:
+            previous = merged[-1]
+
+            if (
+                previous.entity == "PERSON"
+                and span.entity == "PERSON"
+                and previous.end <= span.start
+            ):
+                gap = text[previous.end:span.start]
+                previous_tokens = previous.text.split()
+                current_tokens = span.text.split()
+
+                # Avoid merging two single-token names automatically.
+                one_side_is_fragment = (
+                    (len(previous_tokens) == 1 and len(current_tokens) > 1)
+                    or (len(previous_tokens) > 1 and len(current_tokens) == 1)
+                )
+
+                if gap and gap.isspace() and one_side_is_fragment:
+                    merged[-1] = EntitySpan(
+                        text=text[previous.start:span.end],
+                        entity="PERSON",
+                        start=previous.start,
+                        end=span.end,
+                        confidence=min(
+                            previous.confidence,
+                            span.confidence,
+                        ),
+                    )
+                    continue
+
+        merged.append(span)
+
+    return merged

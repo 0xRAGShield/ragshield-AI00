@@ -5,14 +5,25 @@ from pathlib import Path
 from typing import Final
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-CANONICAL_LABEL_MAPPING_PATH: Final[Path] = (
-    _PROJECT_ROOT / "data" / "sensitive" / "processed" / "combined" / "label_mapping.json"
-)
+
 DEFAULT_LOCAL_MODEL_DIR: Final[str] = (
-    "models/sensitive/bilingual_pii_xlmr"
+    "models/sensitive/bilingual_pii_xlmr_V3OFcombined"
 )
 
-# Exact training BIO order: 17 entity types + O = 35 labels.
+_CANONICAL_MAPPING_CANDIDATES: Final[tuple[Path, ...]] = (
+    _PROJECT_ROOT
+    / "models"
+    / "sensitive"
+    / "bilingual_pii_xlmr_V3OFcombined"
+    / "label_mapping.json",
+    _PROJECT_ROOT
+    / "data"
+    / "sensitive"
+    / "processed"
+    / "V3OFcombined"
+    / "label_mapping.json",
+)
+
 CANONICAL_BIO_LABELS: Final[list[str]] = [
     "O",
     "B-NATIONAL_ID",
@@ -60,10 +71,22 @@ def _entity_labels_from_bio(bio_labels: list[str]) -> list[str]:
     return entity_labels
 
 
-def _maps_from_bio_labels(bio_labels: list[str]) -> tuple[dict[str, int], dict[int, str]]:
+def _maps_from_bio_labels(
+    bio_labels: list[str],
+) -> tuple[dict[str, int], dict[int, str]]:
     label2id = {label: index for index, label in enumerate(bio_labels)}
     id2label = {index: label for index, label in enumerate(bio_labels)}
     return label2id, id2label
+
+
+def resolve_canonical_label_mapping_path() -> Path:
+    for candidate in _CANONICAL_MAPPING_CANDIDATES:
+        if candidate.is_file():
+            return candidate
+    return _CANONICAL_MAPPING_CANDIDATES[0]
+
+
+CANONICAL_LABEL_MAPPING_PATH: Final[Path] = resolve_canonical_label_mapping_path()
 
 
 def load_canonical_label_mapping(path: Path | None = None) -> dict[str, object]:
@@ -72,7 +95,8 @@ def load_canonical_label_mapping(path: Path | None = None) -> dict[str, object]:
     labels = payload.get("labels")
     if not isinstance(labels, list) or [str(item) for item in labels] != CANONICAL_BIO_LABELS:
         raise ValueError(
-            f"Canonical label mapping at '{mapping_path}' does not match the trained 35-label schema."
+            f"Canonical label mapping at '{mapping_path}' "
+            "does not match the trained 35-label schema."
         )
 
     raw_label2id = payload.get("label2id") or {}
@@ -82,19 +106,21 @@ def load_canonical_label_mapping(path: Path | None = None) -> dict[str, object]:
     expected_label2id, expected_id2label = _maps_from_bio_labels(CANONICAL_BIO_LABELS)
     if label2id != expected_label2id or id2label != expected_id2label:
         raise ValueError(
-            f"Canonical label IDs at '{mapping_path}' do not match the trained 35-label schema."
+            f"Canonical label IDs at '{mapping_path}' "
+            "do not match the trained 35-label schema."
         )
     return payload
 
 
 def resolve_default_model_path() -> str:
-    nested = (_PROJECT_ROOT / "models" / "sensitive" / "bilingual_pii_xlmr" / "bilingual_pii_xlmr")
-    parent = _PROJECT_ROOT / "models" / "sensitive" / "bilingual_pii_xlmr"
-    if (nested / "model.safetensors").is_file() or (nested / "pytorch_model.bin").is_file():
-        return str(nested.resolve())
-    if (parent / "model.safetensors").is_file() or (parent / "pytorch_model.bin").is_file():
-        return str(parent.resolve())
-    return str(nested.resolve())
+    """Return the V3 checkpoint directory. Never fall back to an older model."""
+    intended = (
+        _PROJECT_ROOT
+        / "models"
+        / "sensitive"
+        / "bilingual_pii_xlmr_V3OFcombined"
+    )
+    return str(intended.resolve())
 
 
 if CANONICAL_LABEL_MAPPING_PATH.is_file():
@@ -103,7 +129,6 @@ if CANONICAL_LABEL_MAPPING_PATH.is_file():
 _LABEL2ID, _ID2LABEL = _maps_from_bio_labels(CANONICAL_BIO_LABELS)
 LABEL2ID: Final[dict[str, int]] = _LABEL2ID
 ID2LABEL: Final[dict[int, str]] = _ID2LABEL
-
 ENTITY_LABELS: Final[list[str]] = _entity_labels_from_bio(CANONICAL_BIO_LABELS)
 NUM_LABELS: Final[int] = len(CANONICAL_BIO_LABELS)
 SENSITIVE_LABELS: Final[frozenset[str]] = frozenset(ENTITY_LABELS)

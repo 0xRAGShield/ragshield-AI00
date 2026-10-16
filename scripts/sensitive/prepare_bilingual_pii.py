@@ -425,9 +425,7 @@ def load_english_splits(tokenizer):
     }
 
 
-# ==================================================
 # 7. VALIDATE AND COMBINE
-# ==================================================
 
 def validate_tokenized_dataset(dataset, split_name):
     for index, example in enumerate(dataset):
