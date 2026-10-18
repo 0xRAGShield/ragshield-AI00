@@ -158,11 +158,11 @@ These smoke tests validate basic model loading and inference. They do not replac
 
 Pull the Sensitive Data Detection image from Docker Hub:
 
-    docker pull manarabdelbaky16/ragshield-sensitive:v1
+    docker pull manarabdelbaky16/ragshield-sensitive:v2
 
 Run the container:
 
-    docker run --rm manarabdelbaky16/ragshield-sensitive:v1
+    docker run --rm manarabdelbaky16/ragshield-sensitive:v2
 
 The current image runs a model-loading and inference smoke test, then exits. It does not expose a persistent API.
 
