@@ -15,528 +15,467 @@ from app.sensitive.labels import DEFAULT_PRETRAINED_MODEL, NUM_LABELS
 # Every expected entity uses the same format:
 # (exact expected text, expected entity type)
 CASES = [
-    # 1. PERSON
-    {
-        "text": "The applicant is Olivia Bennett.",
-        "expected": {("Olivia Bennett", "PERSON")},
-    },
-    {
-        "text": "المريض اسمه أحمد ياسين.",
-        "expected": {("أحمد ياسين", "PERSON")},
-    },
-    {
-        "text": "Patient name: Isabella Rose Carter.",
-        "expected": {("Isabella Rose Carter", "PERSON")},
-    },
-    {
-        "text": "اسم المريضة ليلى عبد العزيز",
-        "expected": {("ليلى عبد العزيز", "PERSON")},
-    },
-    
-    # 2. EMAIL
-    {
-        "text": "Send the report to olivia.bennett@samplemail.org.",
-        "expected": {("olivia.bennett@samplemail.org", "EMAIL")},
-    },
-    {
-        "text": "البريد الإلكتروني هو layla.ahmed+clinic@samplemail.org",
-        "expected": {("layla.ahmed+clinic@samplemail.org", "EMAIL")},
-    },
-    {
-        "text": "Email: SUPPORT_TEAM42@EXAMPLE.NET",
-        "expected": {("SUPPORT_TEAM42@EXAMPLE.NET", "EMAIL")},
-    },
+    # 56. SINGLE-QUOTED PERSON
+{
+    "text": "The registered patient is 'Daniel Patrick Lewis'.",
+    "expected": {("Daniel Patrick Lewis", "PERSON")},
+},
 
-    # 3. PHONE
-    {
-        "text": "Reach the applicant at 01234567890.",
-        "expected": {("01234567890", "PHONE")},
-    },
-    {
-        "text": "رقم التواصل 01156789012",
-        "expected": {("01156789012", "PHONE")},
-    },
-    {
-        "text": "International number: +20 122 345 6789",
-        "expected": {("+20 122 345 6789", "PHONE")},
-    },
-    {
-        "text": "Call either 01045678912 or 01567890123.",
-        "expected": {
-            ("01045678912", "PHONE"),
-            ("01567890123", "PHONE"),
-        },
-    },
+# 57. DOUBLE-QUOTED PERSON
+{
+    "text": 'The emergency contact is "شهيناز".',
+    "expected": {("شهيناز", "PERSON")},
+},
 
-    # 4. ADDRESS
-    {
-        "text": "The applicant lives at 42 Lotus Avenue, Alexandria, Egypt.",
-        "expected": {("42 Lotus Avenue, Alexandria, Egypt", "ADDRESS")},
-    },
-    {
-        "text": "عنوان المريض ٢٢ شارع النصر، الإسكندرية",
-        "expected": {("٢٢ شارع النصر، الإسكندرية", "ADDRESS")},
-    },
-    {
-        "text": "Delivery address: Flat 6, Building 14, Heliopolis, Cairo.",
-        "expected": {("Flat 6, Building 14, Heliopolis, Cairo", "ADDRESS")},
-    },
+# 58. CURLY-QUOTED PERSON
+{
+    "text": "Patient name: “Michael Scott”.",
+    "expected": {("Michael Scott", "PERSON")},
+},
 
-    # 5. ID CARD NUMBER
-    {
-        "text": "Civil ID number: 29901011234567.",
-        "expected": {("29901011234567", "NATIONAL_ID")},
-    },
-    {
-        "text": "رقم الهوية الشخصية 30101011234567",
-        "expected": {("30101011234567", "NATIONAL_ID")},
-    },
+# 59. NESTED WRAPPERS
+{
+    "text": 'Patient name: ("Daniel Lewis").',
+    "expected": {("Daniel Lewis", "PERSON")},
+},
 
-    # 6. PASSPORT NUMBER
-    {
-        "text": "Passport reference: B98765432.",
-        "expected": {("B98765432", "PASSPORT_NUMBER")},
-    },
-    {
-        "text": "رقم جواز السفر C76543210",
-        "expected": {("C76543210", "PASSPORT_NUMBER")},
-    },
+# 60. SQUARE-BRACKETED PERSON
+{
+    "text": "The patient is [Sophia Miller].",
+    "expected": {("Sophia Miller", "PERSON")},
+},
 
-    # 7. MEDICAL RECORD NUMBER
-    {
-        "text": "Medical file ID: MED-628491.",
-        "expected": {("MED-628491", "MEDICAL_RECORD_NUMBER")},
-    },
-    {
-        "text": "رقم ملف الحالة الطبية CLN-735204",
-        "expected": {("CLN-735204", "MEDICAL_RECORD_NUMBER")},
-    },
+# 61. ARABIC NAME IN BRACKETS
+{
+    "text": "اسم المريض [عمر خالد]",
+    "expected": {("عمر خالد", "PERSON")},
+},
 
-    # 8. CREDIT CARD
-    {
-        "text": "Payment card number: 5555555555554444.",
-        "expected": {("5555555555554444", "CREDIT_CARD")},
-    },
-    {
-        "text": "بيانات بطاقة الدفع 4000000000000002",
-        "expected": {("4000000000000002", "CREDIT_CARD")},
-    },
+# 62. QUOTED DOCTOR NAME
+{
+    "text": 'Reviewed by "Dr. Michael Adams" yesterday.',
+    "expected": {("Dr. Michael Adams", "PERSON")},
+},
 
-    # 9. EMPLOYEE ID
-    {
-        "text": "Staff employee code: STAFF-62841.",
-        "expected": {("STAFF-62841", "EMPLOYEE_ID")},
-    },
-    {
-        "text": "رقم الموظف بالمؤسسة HR-52917",
-        "expected": {("HR-52917", "EMPLOYEE_ID")},
-    },
+# 63. QUOTED EMAIL
+{
+    "text": 'Send the file to "<daniel.lewis@example.org>".',
+    "expected": {("daniel.lewis@example.org", "EMAIL")},
+},
 
-    # 10. PRIVATE DATE
-    {
-        "text": "The patient's date of birth is 21/07/1998.",
-        "expected": {("21/07/1998", "PRIVATE_DATE")},
-    },
-    {
-        "text": "تاريخ ميلاد صاحب الملف 09-11-2001",
-        "expected": {("09-11-2001", "PRIVATE_DATE")},
-    },
+# 64. PARENTHESIZED EGYPTIAN PHONE
+{
+    "text": "Patient contact: (01098765432).",
+    "expected": {("01098765432", "PHONE")},
+},
 
-    # 11. USERNAME
-    {
-        "text": "Portal username: olivia_bennett82",
-        "expected": {("olivia_bennett82", "USERNAME")},
-    },
-    {
-        "text": "اسم المستخدم في النظام layla.clinic27",
-        "expected": {("layla.clinic27", "USERNAME")},
-    },
+# 65. QUOTED INTERNATIONAL PHONE
+{
+    "text": 'Emergency number: "+20 100 234 5678".',
+    "expected": {("+20 100 234 5678", "PHONE")},
+},
 
-    # 12. PASSWORD
-    {
-        "text": "Temporary password: BlueRiver!739",
-        "expected": {("BlueRiver!739", "PASSWORD")},
-    },
-    {
-        "text": "كلمة المرور المؤقتة هي Clinic#4821",
-        "expected": {("Clinic#4821", "PASSWORD")},
-    },
+# 66. BRACKETED NATIONAL ID
+{
+    "text": "National ID: [28706151234568].",
+    "expected": {("28706151234568", "NATIONAL_ID")},
+},
 
-    # 13. IP ADDRESS
-    {
-        "text": "The workstation IP is 10.24.18.7.",
-        "expected": {("10.24.18.7", "IP_ADDRESS")},
-    },
-    {
-        "text": "Server address: 172.20.4.19",
-        "expected": {("172.20.4.19", "IP_ADDRESS")},
-    },
+# 67. QUOTED CREDIT CARD
+{
+    "text": 'Payment card: "4111 1111 1111 1111".',
+    "expected": {("4111 1111 1111 1111", "CREDIT_CARD")},
+},
 
-    # 14. SOCIAL SECURITY NUMBER
-    {
-        "text": "Social security number: 219-48-6731.",
-        "expected": {("219-48-6731", "SOCIAL_SECURITY_NUMBER")},
-    },
+# 68. QUOTED PASSPORT
+{
+    "text": 'Passport reference: "A76543219".',
+    "expected": {("A76543219", "PASSPORT_NUMBER")},
+},
 
-    # 15. DRIVER LICENSE
-    {
-        "text": "Driver license number: D123-987-654-321.",
-        "expected": {("D123-987-654-321", "DRIVER_LICENSE")},
-    },
+# 69. QUOTED MEDICAL RECORD NUMBER
+{
+    "text": 'Patient MRN: (MRN-625184).',
+    "expected": {("MRN-625184", "MEDICAL_RECORD_NUMBER")},
+},
 
-    # 16. NATIONAL ID / SPOKEN NATIONAL ID
-    {
-        "text": "My national identification number is 28706151234568.",
-        "expected": {("28706151234568", "NATIONAL_ID")},
-    },
-    {
-        "text": (
-            "My spoken national ID is two eight seven zero six one "
-            "five one two three four five six eight."
-        ),
-        "expected": {
-            (
-                "two eight seven zero six one five one two three "
-                "four five six eight",
-                "SPOKEN_NATIONAL_ID",
-            )
-        },
-    },
+# 70. QUOTED USERNAME
+{
+    "text": 'Portal username: "daniel_lewis83".',
+    "expected": {("daniel_lewis83", "USERNAME")},
+},
 
-    # 17. ANOTHER MEDICAL RECORD NUMBER
-    {
-        "text": "Patient record number: PAT-830625.",
-        "expected": {("PAT-830625", "MEDICAL_RECORD_NUMBER")},
-    },
+# 71. QUOTED PASSWORD
+{
+    "text": 'Temporary password: "SafeClinic#739".',
+    "expected": {("SafeClinic#739", "PASSWORD")},
+},
 
-    # 18. MULTIPLE PII TYPES
-    {
-        "text": (
-            "Patient: Ethan Cole, email ethan.cole@samplemail.org, "
-            "phone 01234567890."
-        ),
-        "expected": {
-            ("Ethan Cole", "PERSON"),
-            ("ethan.cole@samplemail.org", "EMAIL"),
-            ("01234567890", "PHONE"),
-        },
-    },
-    {
-        "text": (
-            "بيانات المريضة مريم عادل، هاتف 01156789012، "
-            "ملف CLN-735204"
-        ),
-        "expected": {
-            ("مريم عادل", "PERSON"),
-            ("01156789012", "PHONE"),
-            ("CLN-735204", "MEDICAL_RECORD_NUMBER"),
-        },
-    },
+# 72. QUOTED IP ADDRESS
+{
+    "text": 'Workstation IP: "192.168.10.24".',
+    "expected": {("192.168.10.24", "IP_ADDRESS")},
+},
 
-    # 19. FRANCO ARABIC / MIXED LANGUAGE
-    {
-        "text": "Momken teb3ato el report 3ala layla.test@samplemail.org",
-        "expected": {("layla.test@samplemail.org", "EMAIL")},
-    },
-    {
-        "text": "El raqam bta3 Olivia howa 01234567890",
-        "expected": {("01234567890", "PHONE"),
-                     ("Olivia", "PERSON")
-                     },
-    },
-    {
-        "text": "call Ahmed Yassin 3ala 01156789012",
-        "expected": {
-            ("Ahmed Yassin", "PERSON"),
-            ("01156789012", "PHONE"),
-        },
-    },
+# 73. APOSTROPHE INSIDE A NAME
+{
+    "text": "The patient is منار.",
+    "expected": {("منار", "PERSON")},
+},
 
-    # 20. NEGATIVE CASES
-    {
-        "text": "The outpatient department opens at eight.",
-        "expected": set(),
-    },
-    {
-        "text": "Artificial intelligence supports medical research.",
-        "expected": set(),
-    },
-    {
-        "text": "The system processed 250 records successfully.",
-        "expected": set(),
-    },
-    {
-        "text": "The hospital has a cardiology and neurology department.",
-        "expected": set(),
-    },
-    {
-        "text": "The appointment starts at 10:30 AM.",
-        "expected": set(),
-    },
+# 74. APOSTROPHE INSIDE AN ORDINARY WORD
+{
+    "text": "The patient's appointment is confirmed.",
+    "expected": set(),
+},
 
-    # 21. ADDITIONAL ARABIC PERSON=
-    {
-        "text": "المريضة اسمها سارة أحمد عبد الله",
-        "expected": {("سارة أحمد عبد الله", "PERSON")},
-    },
+# 75. MULTIPLE OCCURRENCES OF THE SAME NAME
+{
+    "text": "Muhab called Muhab about Muhab's results.",
+    "expected": {("Muhab", "PERSON")},
+},
 
-    # 22. ADDITIONAL ENGLISH PERSON=
-    {
-        "text": "The appointment is for Emily Rose Carter.",
-        "expected": {("Emily Rose Carter", "PERSON")},
+# 76. TWO DIFFERENT PEOPLE
+{
+    "text": "Nurse Emily Carter contacted patient Daniel Lewis.",
+    "expected": {
+        ("Emily Carter", "PERSON"),
+        ("Daniel Lewis", "PERSON"),
     },
+},
 
-    # 23. FRANCO ARABIC PERSON=
-    {
-        "text": "El patient esmo Karim Mohamed w 3ando appointment.",
-        "expected": {("Karim Mohamed", "PERSON")},
-    },
+# 77. SAME NAME WITH DIFFERENT WRAPPERS
+{
+    "text": 'Patient "Daniel Lewis" met [Daniel Lewis].',
+    "expected": {("Daniel Lewis", "PERSON")},
+},
 
-    # 24. ADDITIONAL EGYPTIAN PHONE
-    {
-        "text": "للتواصل مع المريض اتصل على 01012345678",
-        "expected": {("01012345678", "PHONE")},
+# 78. PERSON AND EMAIL WITH SAME NAME
+{
+    "text": "Rachel Green (rachel.green@example.org) is the patient.",
+    "expected": {
+        ("Rachel Green", "PERSON"),
+        ("rachel.green@example.org", "EMAIL"),
     },
+},
 
-    # 25. INTERNATIONAL PHONE
-    {
-        "text": "Contact the patient at +1 202-555-0147.",
-        "expected": {("+1 202-555-0147", "PHONE")},
+# 79. PERSON, PHONE, AND NATIONAL ID
+{
+    "text": "DR. Sarah, phone 01098765432, national ID 28706151234568.",
+    "expected": {
+        ("DR.Sarah", "PERSON"),
+        ("01098765432", "PHONE"),
+        ("28706151234568", "NATIONAL_ID"),
     },
+},
 
-    # 26. ADDITIONAL EMAIL
-    {
-        "text": "Send the report to nour.ahmed@example.com",
-        "expected": {("nour.ahmed@example.com", "EMAIL")},
+# 80. TWO EMAILS
+{
+    "text": "Contact daniel@example.org or rachel@example.net.",
+    "expected": {
+        ("daniel@example.org", "EMAIL"),
+        ("rachel@example.net", "EMAIL"),
     },
+},
 
-    # 27. ARABIC ADDRESS
-    {
-        "text": "عنوان المريض 15 شارع التحرير، الدقي، الجيزة",
-        "expected": {("15 شارع التحرير، الدقي، الجيزة", "ADDRESS")},
-    },
+# 81. PHONE WITH AREA-CODE PARENTHESES
+{
+    "text": "Office phone: (212) 555-0184.",
+    "expected": {("(212) 555-0184", "PHONE")},
+},
 
-    # 28. ENGLISH ADDRESS
-    {
-        "text": "The patient lives at 24 Oxford Street, London.",
-        "expected": {("24 Oxford Street, London", "ADDRESS")},
-    },
+# 82. EMAIL WITH PLUS ADDRESSING
+{
+    "text": "Email: daniel.lewis+records@example.org.",
+    "expected": {("daniel.lewis+records@example.org", "EMAIL")},
+},
 
-    # 29. NATIONAL ID
-    {
-        "text": "الرقم القومي للمريض 29807151234567",
-        "expected": {("29807151234567", "NATIONAL_ID")},
-    },
+# 83. EMAIL WITH SUBDOMAIN
+{
+    "text": "Send results to daniel@records.hospital.example.org.",
+    "expected": {("daniel@records.hospital.example.org", "EMAIL")},
+},
 
-    # 30. ADDITIONAL PASSPORT
-    {
-        "text": "Passport number: A12345678",
-        "expected": {("A12345678", "PASSPORT_NUMBER")},
-    },
+# 84. ARABIC-INDIC DIGITS IN PHONE
+{
+    "text": "رقم الموبايل ٠١٠٩٨٧٦٥٤٣٢",
+    "expected": {("٠١٠٩٨٧٦٥٤٣٢", "PHONE")},
+},
 
-    # 31. ADDITIONAL MEDICAL RECORD NUMBER
-    {
-        "text": "Patient MRN: MRN-784521",
-        "expected": {("MRN-784521", "MEDICAL_RECORD_NUMBER")},
-    },
+# 85. MIXED NUMERAL SYSTEMS IN PHONE
+{
+    "text": "رقم التواصل 010٩٨٧٦٥٤٣٢",
+    "expected": {("010٩٨٧٦٥٤٣٢", "PHONE")},
+},
 
-    # 32. ADDITIONAL CREDIT CARD
-    {
-        "text": "The card number is 4111 1111 1111 1111",
-        "expected": {("4111 1111 1111 1111", "CREDIT_CARD")},
-    },
+# 86. ARABIC NAME WITH DIACRITICS
+{
+    "text": "اسم المريض مُحَمَّد علي",
+    "expected": {("مُحَمَّد علي", "PERSON")},
+},
 
-    # 33. ADDITIONAL EMPLOYEE ID
-    {
-        "text": "Employee ID: EMP-20481",
-        "expected": {("EMP-20481", "EMPLOYEE_ID")},
-    },
+# 87. LONG ARABIC NAME
+{
+    "text": "اسم المريضة فاطمة أحمد عبد الرحمن مصطفى",
+    "expected": {("فاطمة أحمد عبد الرحمن مصطفى", "PERSON")},
+},
 
-    # 34. DATE OF BIRTH
-    {
-        "text": "Date of birth: 14 March 2001",
-        "expected": {("14 March 2001", "PRIVATE_DATE")},
-    },
+# 88. FRANCO NAME WITH MULTIPLE DIGITS
+{
+    "text": "El patient esmo Mohamed 3abdallah.",
+    "expected": {("Mohamed 3abdallah", "PERSON")},
+},
 
-    # 35. ADDITIONAL USERNAME
-    {
-        "text": "The patient's username is manar_ahmed22",
-        "expected": {("manar_ahmed22", "USERNAME")},
+# 89. FRANCO WITH EMAIL AND PHONE
+{
+    "text": "Esm el patient Karim Hassan, email karim.hassan@example.org, phone 01098765432.",
+    "expected": {
+        ("Karim Hassan", "PERSON"),
+        ("karim.hassan@example.org", "EMAIL"),
+        ("01098765432", "PHONE"),
     },
+},
 
-    # 36. ADDITIONAL PASSWORD
-    {
-        "text": "Temporary password: MedSecure#927",
-        "expected": {("MedSecure#927", "PASSWORD")},
-    },
+# 90. FRANCO NEGATIVE CASE
+{
+    "text": "El doctor katab el report wel patient ra7 el bet.",
+    "expected": set(),
+},
 
-    # 37. ADDITIONAL IP ADDRESS
-    {
-        "text": "The request came from IP address 192.168.1.25",
-        "expected": {("192.168.1.25", "IP_ADDRESS")},
-    },
+# 91. ORDINARY WORD IN QUOTES
+{
+    "text": 'The nurse said "the patient is stable".',
+    "expected": set(),
+},
 
-    # 38. THREE PII TYPES IN ONE SENTENCE
-    {
-        "text": (
-            "Patient Salma Hassan, phone 01123456789, "
-            "email salma.test@example.com"
-        ),
-        "expected": {
-            ("Salma Hassan", "PERSON"),
-            ("01123456789", "PHONE"),
-            ("salma.test@example.com", "EMAIL"),
-        },
-    },
+# 92. ORDINARY PHRASE IN BRACKETS
+{
+    "text": "The treatment plan is [rest and hydration].",
+    "expected": set(),
+},
 
-    # 39. NEGATIVE: ORDINARY MEDICAL SENTENCE
-    {
-        "text": "The patient has a headache and needs more rest.",
-        "expected": set(),
-    },
+# 93. ORDINARY NUMBER IS NOT AUTOMATICALLY PII
+{
+    "text": "The patient completed 12 exercises in 3 sessions.",
+    "expected": set(),
+},
 
-    # 40. NEGATIVE: FRANCO / MIXED LANGUAGE
-    {
-        "text": (
-            "Momken nراجع نتيجة التحليل bokra ba3d el doctor visit?"
-        ),
-        "expected": set(),
-    },
-        # 41. Arabic name in an English sentence
-    {
-        "text": "Patient name: أحمد محمود حسن.",
-        "expected": {("أحمد محمود حسن", "PERSON")},
-    },
+# 94. ORDINARY DATE WITHOUT PERSONAL CONTEXT
+{
+    "text": "The conference starts on 14 March 2027.",
+    "expected": set(),
+},
 
-    # 42. Arabic female name in an English sentence
-    {
-        "text": "The appointment is for مريم خالد إبراهيم.",
-        "expected": {("مريم خالد إبراهيم", "PERSON")},
-    },
+# 95. MEDICAL TERM IS NOT A PERSON
+{
+    "text": "The patient was diagnosed with Type 2 Diabetes Mellitus.",
+    "expected": set(),
+},
 
-    # 43. Egyptian Arabic: name and phone
-    {
-        "text": "اسم المريض محمد علي ورقم تليفونه 01012345678",
-        "expected": {
-            ("محمد علي", "PERSON"),
-            ("01012345678", "PHONE"),
-        },
-    },
+# 96. EMAIL NEXT TO PUNCTUATION
+{
+    "text": "(daniel.lewis@example.org), please confirm receipt.",
+    "expected": {("daniel.lewis@example.org", "EMAIL")},
+},
 
-    # 44. Egyptian Arabic: multiple PII entities
-    {
-        "text": (
-            "بيانات المريضة نور أحمد، الإيميل nour.ahmed@example.com، "
-            "ورقم الموبايل 01123456789"
-        ),
-        "expected": {
-            ("نور أحمد", "PERSON"),
-            ("nour.ahmed@example.com", "EMAIL"),
-            ("01123456789", "PHONE"),
-        },
-    },
+# 97. PERSON NEXT TO PUNCTUATION
+{
+    "text": "Patient: [john smith], admitted today.",
+    "expected": {("john smith", "PERSON")},
+},
 
-    # 45. English sentence with Arabic name and email
-    {
-        "text": "Please send the report to سارة محمد at sara.mohamed@example.com.",
-        "expected": {
-            ("سارة محمد", "PERSON"),
-            ("sara.mohamed@example.com", "EMAIL"),
-        },
+# 98. TWO WRAPPED ENTITIES IN ONE SENTENCE
+{
+    "text": 'Patient "Rachel Green", phone (01098765432).',
+    "expected": {
+        ("Rachel Green", "PERSON"),
+        ("01098765432", "PHONE"),
     },
+},
 
-    # 46. Arabic address with a mixed-language sentence
-    {
-        "text": "Patient address: ١٥ شارع التحرير، الدقي، الجيزة",
-        "expected": {
-            ("١٥ شارع التحرير، الدقي، الجيزة", "ADDRESS"),
-        },
+# 99. ARABIC NAME AND QUOTED NATIONAL ID
+{
+    "text": 'اسم المريض "عمر خالد" ورقمه القومي "28706151234568".',
+    "expected": {
+        ("عمر خالد", "PERSON"),
+        ("28706151234568", "NATIONAL_ID"),
     },
+},
 
-    # 47. Egyptian national ID
-    {
-        "text": "الرقم القومي الخاص بأحمد محمود هو 29807151234567",
-        "expected": {
-            ("أحمد محمود", "PERSON"),
-            ("29807151234567", "NATIONAL_ID"),
-        },
+# 100. ALL ENTITIES MUST KEEP ORIGINAL OFFSETS
+{
+    "text": 'Patient "Rachel Green", email (rachel.green@example.org), phone [01098765432].',
+    "expected": {
+        ("Rachel Green", "PERSON"),
+        ("rachel.green@example.org", "EMAIL"),
+        ("01098765432", "PHONE"),
     },
+},
+{
+    "text": "اسم المريض \"يوسف محمود\"",
+    "expected": {("يوسف محمود", "PERSON")},
+},
 
-    # 48. Arabic name with medical record number
-    {
-        "text": "ملف المريض يوسف إبراهيم رقمه الطبي MRN-625184",
-        "expected": {
-            ("يوسف إبراهيم", "PERSON"),
-            ("MRN-625184", "MEDICAL_RECORD_NUMBER"),
-        },
+{
+    "text": "المريضة (سلمى إبراهيم) حضرت للمتابعة.",
+    "expected": {("سلمى إبراهيم", "PERSON")},
+},
+
+{
+    "text": "اسم المريض [كريم عبد الرحمن].",
+    "expected": {("كريم عبد الرحمن", "PERSON")},
+},
+
+{
+    "text": "بيانات المريضة: «نورهان أحمد».",
+    "expected": {("نورهان أحمد", "PERSON")},
+},
+
+{
+    "text": "المريض اسمه محمود أحمد عبد الله.",
+    "expected": {("محمود أحمد عبد الله", "PERSON")},
+},
+
+{
+    "text": "اسم صاحبة الملف فاطمة محمد عبد الرحمن علي.",
+    "expected": {("فاطمة محمد عبد الرحمن علي", "PERSON")},
+},
+
+{
+    "text": "الدكتور أحمد سامح راجع نتائج التحاليل.",
+    "expected": {("أحمد سامح", "PERSON")},
+},
+
+{
+    "text": "الدكتورة منى عادل كتبت الروشتة.",
+    "expected": {("منى عادل", "PERSON")},
+},
+
+{
+    "text": "تم تسجيل بيانات المريض واسمه خالد مصطفى.",
+    "expected": {("خالد مصطفى", "PERSON")},
+},
+
+{
+    "text": "رقم تليفون أحمد سمير هو 01098765432.",
+    "expected": {
+        ("أحمد سمير", "PERSON"),
+        ("01098765432", "PHONE"),
     },
+},
 
-    # 49. Franco Arabic with Arabic name
-    {
-        "text": "El patient esmo أحمد سامي w ra2mo 01012345678",
-        "expected": {
-            ("أحمد سامي", "PERSON"),
-            ("01012345678", "PHONE"),
-        },
+{
+    "text": "كلم أحمد حسن على 01012345678 أو منى عادل على 01123456789.",
+    "expected": {
+        ("أحمد حسن", "PERSON"),
+        ("01012345678", "PHONE"),
+        ("منى عادل", "PERSON"),
+        ("01123456789", "PHONE"),
     },
+},
 
-    # 50. Franco Arabic with Arabic name and email
-    {
-        "text": "Momken teb3ato el report le منى إبراهيم 3ala mona.ibrahim@example.com",
-        "expected": {
-            ("منى إبراهيم", "PERSON"),
-            ("mona.ibrahim@example.com", "EMAIL"),
-        },
+{
+    "text": "ابعت التقرير على nour.mohamed@example.com لو سمحت.",
+    "expected": {("nour.mohamed@example.com", "EMAIL")},
+},
+
+{
+    "text": "الإيميل المسجل هو (sara.ali@example.org).",
+    "expected": {("sara.ali@example.org", "EMAIL")},
+},
+
+{
+    "text": "الرقم القومي بتاع المريض هو 29807151234567.",
+    "expected": {("29807151234567", "NATIONAL_ID")},
+},
+
+{
+    "text": "الرقم القومي: (29807151234567).",
+    "expected": {("29807151234567", "NATIONAL_ID")},
+},
+
+{
+    "text": "الرقم القومي للمريضة ٢٩٨٠٧١٥١٢٣٤٥٦٧.",
+    "expected": {("٢٩٨٠٧١٥١٢٣٤٥٦٧", "NATIONAL_ID")},
+},
+
+{
+    "text": "رقم الموبايل ٠١٠١٢٣٤٥٦٧٨.",
+    "expected": {("٠١٠١٢٣٤٥٦٧٨", "PHONE")},
+},
+
+{
+    "text": "رقم التواصل 010 1234 5678.",
+    "expected": {("010 1234 5678", "PHONE")},
+},
+
+{
+    "text": "رقم الملف الطبي للمريض MRN-853621.",
+    "expected": {("MRN-853621", "MEDICAL_RECORD_NUMBER")},
+},
+
+{
+    "text": "ملف المريض (CLN-842615) موجود في النظام.",
+    "expected": {("CLN-842615", "MEDICAL_RECORD_NUMBER")},
+},
+
+{
+    "text": "تاريخ ميلاد المريضة هو 17/08/2000.",
+    "expected": {("17/08/2000", "PRIVATE_DATE")},
+},
+
+{
+    "text": "تاريخ الميلاد ١٧/٠٨/٢٠٠٠.",
+    "expected": {("١٧/٠٨/٢٠٠٠", "PRIVATE_DATE")},
+},
+
+{
+    "text": "عنوان المريض ٢٥ شارع الهرم، الجيزة.",
+    "expected": {("٢٥ شارع الهرم، الجيزة", "ADDRESS")},
+},
+
+{
+    "text": "عنوان السكن شقة ٧، عمارة ١٢، مدينة نصر، القاهرة.",
+    "expected": {("شقة ٧، عمارة ١٢، مدينة نصر، القاهرة", "ADDRESS")},
+},
+
+{
+    "text": "باسورد الحساب المؤقت هو SecureMed#628.",
+    "expected": {("SecureMed#628", "PASSWORD")},
+},
+
+{
+    "text": "اليوزر نيم الخاص بالمريض هو ahmed_samir92.",
+    "expected": {("ahmed_samir92", "USERNAME")},
+},
+
+{
+    "text": "بيانات المريضة منى خالد، الإيميل mona.khaled@example.com، ورقم الملف MRN-853621.",
+    "expected": {
+        ("منى خالد", "PERSON"),
+        ("mona.khaled@example.com", "EMAIL"),
+        ("MRN-853621", "MEDICAL_RECORD_NUMBER"),
     },
+},
 
-    # 51. Arabic name written in English context
-    {
-        "text": "The patient is called كريم مصطفى and his file is CLN-735204.",
-        "expected": {
-            ("كريم مصطفى", "PERSON"),
-            ("CLN-735204", "MEDICAL_RECORD_NUMBER"),
-        },
+{
+    "text": "المريض عمر سامح، رقمه القومي 29807151234567 وتاريخ ميلاده 17/08/2000.",
+    "expected": {
+        ("عمر سامح", "PERSON"),
+        ("29807151234567", "NATIONAL_ID"),
+        ("17/08/2000", "PRIVATE_DATE"),
     },
+},
 
-    # 52. Multiple Arabic names and phone numbers
-    {
-        "text": (
-            "للتواصل مع أحمد حسن 01012345678 أو منى علي 01123456789"
-        ),
-        "expected": {
-            ("أحمد حسن", "PERSON"),
-            ("01012345678", "PHONE"),
-            ("منى علي", "PERSON"),
-            ("01123456789", "PHONE"),
-        },
-    },
+{
+    "text": "المريض اتحسن بعد العلاج وحالته مستقرة.",
+    "expected": set(),
+},
 
-    # 53. Arabic date of birth
-    {
-        "text": "تاريخ ميلاد المريضة سارة محمود هو 14/03/2001",
-        "expected": {
-            ("سارة محمود", "PERSON"),
-            ("14/03/2001", "PRIVATE_DATE"),
-        },
-    },
-
-    # 54. Arabic username in an English sentence
-    {
-        "text": "اسم المستخدم الخاص بـ خالد سمير هو khaled_samir27",
-        "expected": {
-            ("خالد سمير", "PERSON"),
-            ("khaled_samir27", "USERNAME"),
-        },
-    },
-
-    # 55. Arabic password context
-    {
-        "text": "كلمة المرور الخاصة بحساب المريض هي MedSecure#927",
-        "expected": {
-            ("MedSecure#927", "PASSWORD"),
-        },
-    },
-
+{
+    "text": "المريض راح قسم الطوارئ وعمل أشعة وتحاليل.",
+    "expected": set(),
+},
    
 ]
 

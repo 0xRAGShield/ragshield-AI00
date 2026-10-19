@@ -24,8 +24,23 @@ _STRUCTURED_RULE_LABELS = frozenset(
     }
 )
 _NATIONAL_ID_LABELS = frozenset({"ID_CARD_NUMBER", "NATIONAL_ID"})
-_LEADING_WRAP_CHARS = frozenset("<[{(\"'\u00ab")
-_TRAILING_WRAP_CHARS = frozenset(".,;:!?)]}>\"'\u00bb\u060c\u061b\u06d4")
+_LEADING_WRAP_CHARS = frozenset("<[{(\"'\u00ab\u2018\u201c")
+_TRAILING_WRAP_CHARS = frozenset(
+    ".,;:!?)]}>\"'\u00bb\u060c\u061b\u06d4\u2019\u201d"
+)
+_BRACKET_OPEN_TO_CLOSE = {
+    "(": ")",
+    "[": "]",
+    "{": "}",
+    "<": ">",
+}
+_QUOTE_OPEN_TO_CLOSE = {
+    '"': '"',
+    "\u201c": "\u201d",
+    "\u2018": "\u2019",
+    "\u00ab": "\u00bb",
+}
+_ASCII_SINGLE_QUOTE = "'"
 
 
 @dataclass(frozen=True)
@@ -92,12 +107,6 @@ def trim_entity_boundaries(
     while end > start:
         char = text[end - 1]
         if char.isspace() or char in _TRAILING_WRAP_CHARS:
-            if (
-                entity_type == "PHONE"
-                and char == ")"
-                and "(" in text[start:end - 1]
-            ):
-                break
             end -= 1
             continue
         break
@@ -106,18 +115,129 @@ def trim_entity_boundaries(
         char = text[start]
         if entity_type == "PHONE" and char == "+":
             break
-        if (
-            entity_type == "PHONE"
-            and char == "("
-            and ")" in text[start + 1:end]
-        ):
-            break
+        if entity_type == "PHONE" and char == "(":
+            close = text.find(")", start + 1, end)
+            if close != -1 and any(
+                symbol.isdigit() for symbol in text[close + 1:end]
+            ):
+                break
         if char.isspace() or char in _LEADING_WRAP_CHARS:
             start += 1
             continue
         break
 
     return start, end
+
+
+def _is_opening_ascii_single_quote(text: str, index: int) -> bool:
+    nxt = text[index + 1] if index + 1 < len(text) else ""
+    if not nxt or nxt.isspace():
+        return False
+    if index == 0:
+        return True
+    prev = text[index - 1]
+    return prev.isspace() or prev in "([{<\"'\u2018\u201c\u00ab"
+
+
+def _is_closing_ascii_single_quote(text: str, index: int) -> bool:
+    prev = text[index - 1] if index else ""
+    if not prev or prev.isspace():
+        return False
+    if index + 1 >= len(text):
+        return True
+    nxt = text[index + 1]
+    return nxt.isspace() or nxt in ".,;:!?)]}>\"'\u2019\u201d\u00bb"
+
+
+def _collect_matched_wrapper_indices(text: str) -> set[int]:
+    """Return character indices of matched quotes/brackets. Length is unchanged."""
+    marked: set[int] = set()
+    stack: list[tuple[int, str]] = []
+
+    for index, char in enumerate(text):
+        if stack and char == stack[-1][1] and char in _BRACKET_OPEN_TO_CLOSE.values():
+            open_index, _close = stack.pop()
+            if index > open_index + 1:
+                marked.add(open_index)
+                marked.add(index)
+            continue
+        if char in _BRACKET_OPEN_TO_CLOSE:
+            stack.append((index, _BRACKET_OPEN_TO_CLOSE[char]))
+
+    for open_char, close_char in _QUOTE_OPEN_TO_CLOSE.items():
+        index = 0
+        while index < len(text):
+            if text[index] != open_char:
+                index += 1
+                continue
+            close_index = index + 1
+            while close_index < len(text) and text[close_index] != close_char:
+                close_index += 1
+            if close_index < len(text) and close_index > index + 1:
+                marked.add(index)
+                marked.add(close_index)
+                index = close_index + 1
+                continue
+            index += 1
+
+    index = 0
+    while index < len(text):
+        if (
+            text[index] == _ASCII_SINGLE_QUOTE
+            and _is_opening_ascii_single_quote(text, index)
+        ):
+            close_index = index + 1
+            while close_index < len(text):
+                if (
+                    text[close_index] == _ASCII_SINGLE_QUOTE
+                    and _is_closing_ascii_single_quote(text, close_index)
+                ):
+                    if close_index > index + 1:
+                        marked.add(index)
+                        marked.add(close_index)
+                    index = close_index + 1
+                    break
+                close_index += 1
+            else:
+                index += 1
+            continue
+        index += 1
+
+    return marked
+
+
+def replace_matched_wrappers_with_spaces(text: str) -> str:
+    """
+    Replace matched quote/bracket characters with spaces.
+
+    The returned string has the same length as ``text``, so character
+    offsets of the inner value are identical to the original input.
+    Unmatched wrappers and apostrophes inside words are left unchanged.
+    """
+    if not text:
+        return text
+
+    marked = _collect_matched_wrapper_indices(text)
+    if not marked:
+        return text
+
+    chars = list(text)
+    for index in marked:
+        chars[index] = " "
+    return "".join(chars)
+
+
+def add_non_overlapping_spans(
+    primary: Sequence[EntitySpan],
+    secondary: Sequence[EntitySpan],
+) -> list[EntitySpan]:
+    """Keep primary spans and add secondary spans that do not overlap them."""
+    kept = list(primary)
+    for span in secondary:
+        if any(_spans_overlap(span, other) for other in kept):
+            continue
+        kept.append(span)
+    return sorted(kept, key=lambda span: (span.start, span.end, span.entity))
 
 
 def polish_entity_span(text: str, span: EntitySpan) -> EntitySpan | None:
@@ -527,13 +647,7 @@ def integrate_rule_spans(
     model_spans: Sequence[EntitySpan],
     rule_spans: Sequence[EntitySpan],
 ) -> list[EntitySpan]:
-    """
-    Combine NER spans with rule spans.
-
-    Same-type partial overlaps are replaced by the rule span. Exact duplicate
-    spans keep the model confidence. Unrelated model entities such as PERSON
-    are kept even when a structured rule is nearby.
-    """
+    
     kept_model: list[EntitySpan] = []
     for model in model_spans:
         drop = False

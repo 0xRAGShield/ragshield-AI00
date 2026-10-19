@@ -72,16 +72,15 @@ These counts describe the prepared dataset splits. Model performance must be eva
 
 The detection process consists of the following stages:
 
-1. **Input text:** Receive the text to be analyzed.
+1. **Input text:** Receive the original text to be analyzed.
 2. **NER inference:** Use XLM-RoBERTa to predict entity labels and token offsets.
 3. **Rule-based detection:** Apply regular-expression and contextual rules for supported sensitive patterns.
-4. **Span validation:** Validate entity boundaries against the original text.
-5. **Overlap handling:** Resolve overlapping predictions according to the detection logic.
-6. **Result generation:** Return detected entities with their labels, character offsets, and confidence information when available.
+4. **Wrapped-value detection:** Run a shared, length-preserving unwrapping pass when matched wrappers are present. Wrapper characters are replaced with spaces in a copy of the input, allowing the detector to analyze the inner value without shifting its character offsets.
+5. **Span validation:** Validate detected spans against the original input and retain only spans whose text matches the original text at the reported offsets.
+6. **Overlap handling:** Merge detections while preserving existing original-text detections when spans overlap.
+7. **Result generation:** Return detected entities with their canonical labels, original-text character offsets, and confidence information when available.
 
-The model and rule-based component complement each other. Rules can identify recognizable patterns, while the NER model learns contextual and linguistic patterns.
-
-Detection results do not guarantee that an identifier is valid or belongs to a particular person.
+Quotes and brackets are treated as formatting rather than evidence of sensitive information. A wrapped value is detected only when the existing model or rules recognize the inner value. Apostrophes within words, such as `O'Brien` and `patient's`, are not treated as wrapping delimiters.
 
 ## 5. Supported Entity Categories
 
@@ -130,8 +129,9 @@ Run from the project root:
 
 Latest recorded result:
 
-- 22 tests passed.
-- 3 tests skipped.
+- 75 tests passed.
+
+* 3 tests failed.
 
 Skipped tests are not counted as passed and should be reviewed to determine whether additional validation is required.
 
@@ -158,11 +158,11 @@ These smoke tests validate basic model loading and inference. They do not replac
 
 Pull the Sensitive Data Detection image from Docker Hub:
 
-    docker pull manarabdelbaky16/ragshield-sensitive:v2
+    docker pull manarabdelbaky16/ragshield-sensitive:v3
 
 Run the container:
 
-    docker run --rm manarabdelbaky16/ragshield-sensitive:v2
+    docker run --rm manarabdelbaky16/ragshield-sensitive:v3
 
 The current image runs a model-loading and inference smoke test, then exits. It does not expose a persistent API.
 
@@ -172,12 +172,12 @@ If the repository is private, users must authenticate and have permission to acc
 
 The core implementation is located in `Security_layer/app/sensitive/`.
 
-- `detector.py` — Main detection interface and orchestration.
+- `detector.py` — Main detection orchestration, model/rule integration, wrapped-value detection, and span merging.
 - `model.py` — XLM-RoBERTa model loading and token-classification inference.
-- `labels.py` — Label vocabulary, mapping validation, and model-path resolution.
-- `offsets.py` — Character-offset alignment helpers.
+- `labels.py` — Label vocabulary, canonicalization, and model-path resolution.
+- `offsets.py` — Character-offset validation and length-preserving wrapper handling utilities.
 - `schemas.py` — Detection result and entity data structures.
-- `rules.py` — Rule-based sensitive pattern detection.
+- `rules.py` — Rule-based sensitive pattern detection and contextual classification.
 - `__init__.py` — Public module exports.
 
 ## 10. Current Status and Next Steps

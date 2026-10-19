@@ -714,6 +714,86 @@ _PERSON_CLINICAL_TAILS = (
     "the patient",
 )
 
+# English honorific immediately before a PERSON name. Keep original casing.
+_PERSON_HONORIFIC_BEFORE = re.compile(
+    r"(?<![A-Za-z])((?:Dr|DR|dr)\.)\s+$"
+)
+
+# Arabic preposition letters that can cliticize onto a following name.
+# Do not strip these unless a grammatical cue is present.
+_ARABIC_PERSON_PROCLITICS = frozenset("بل")
+_ARABIC_PERSON_PROCLITIC_CUE = re.compile(
+    r"(?:الخاص|الخاصة|الخاصه|التابع|التابعة)\s*$"
+)
+_ARABIC_NAME_LETTER = re.compile(r"[\u0621-\u064A]")
+
+# Cue-scoped English PERSON recovery. This is not a generic Title-Case rule.
+_ENGLISH_GIVEN_NAME = r"[A-Z][a-z]+(?:-[A-Z][a-z]+)?"
+_ENGLISH_NAME_SPAN = rf"{_ENGLISH_GIVEN_NAME}(?:\s+{_ENGLISH_GIVEN_NAME}){{0,3}}"
+_ENGLISH_MULTI_NAME_SPAN = (
+    rf"{_ENGLISH_GIVEN_NAME}(?:\s+{_ENGLISH_GIVEN_NAME}){{1,3}}"
+)
+_ENGLISH_DOCTOR_NAME_SPAN = (
+    rf"(?:Dr|DR|dr)\.\s+{_ENGLISH_GIVEN_NAME}"
+    rf"(?:\s+{_ENGLISH_GIVEN_NAME}){{0,2}}"
+)
+_NAME_BOUNDARY = r"(?=\s|[.,;:!?\"'”’)]|$)"
+
+_CONTEXTUAL_PERSON_PATTERNS = (
+    re.compile(
+        rf"\bPatient(?:\s+name)?[:\s]+"
+        rf"(?P<name>{_ENGLISH_MULTI_NAME_SPAN}){_NAME_BOUNDARY}"
+    ),
+    re.compile(
+        rf"\bContact\s+(?P<name>{_ENGLISH_MULTI_NAME_SPAN})\s+for\b"
+    ),
+    re.compile(
+        rf"\blists\s+[\"'“‘]?(?P<name>{_ENGLISH_MULTI_NAME_SPAN})"
+        rf"[\"'”’]?\s+as\b"
+    ),
+    re.compile(
+        rf"\b(?:applicant|patient)\s+is\s+"
+        rf"(?P<name>(?:{_ENGLISH_DOCTOR_NAME_SPAN}|{_ENGLISH_NAME_SPAN}))"
+        rf"{_NAME_BOUNDARY}"
+    ),
+    re.compile(
+        rf"\b(?P<name>{_ENGLISH_DOCTOR_NAME_SPAN}){_NAME_BOUNDARY}"
+    ),
+)
+
+_PERSON_NAME_BLOCKLIST = frozenset(
+    {
+        "patient",
+        "doctor",
+        "clinic",
+        "hospital",
+        "department",
+        "cardiology",
+        "neurology",
+        "outpatient",
+        "inpatient",
+        "summary",
+        "discharge",
+        "chart",
+        "record",
+        "medical",
+        "street",
+        "road",
+        "avenue",
+        "lane",
+        "drive",
+        "boulevard",
+        "box",
+        "today",
+        "tomorrow",
+        "essential",
+        "intelligence",
+        "artificial",
+        "contact",
+        "applicant",
+    }
+)
+
 
 def trim_person_clinical_tail(
     text: str,
@@ -756,6 +836,96 @@ def trim_person_clinical_tail(
     return start, end
 
 
+def expand_person_honorific(
+    text: str,
+    start: int,
+    end: int,
+    label: str,
+) -> tuple[int, int] | None:
+    if label != "PERSON":
+        return start, end
+
+    if not (0 <= start < end <= len(text)):
+        return None
+
+    match = _PERSON_HONORIFIC_BEFORE.search(text[:start])
+    if match is None:
+        return start, end
+
+    new_start = match.start(1)
+    if new_start >= end or text[new_start:end].strip() in {"Dr.", "DR.", "dr."}:
+        return start, end
+
+    return new_start, end
+
+
+def trim_arabic_person_proclitic(
+    text: str,
+    start: int,
+    end: int,
+    label: str,
+) -> tuple[int, int] | None:
+    if label != "PERSON":
+        return start, end
+
+    if not (0 <= start < end <= len(text)):
+        return None
+
+    first = text[start]
+    if first not in _ARABIC_PERSON_PROCLITICS:
+        return start, end
+
+    if start + 1 >= end or _ARABIC_NAME_LETTER.match(text[start + 1]) is None:
+        return start, end
+
+    if _ARABIC_PERSON_PROCLITIC_CUE.search(text[:start]) is None:
+        return start, end
+
+    new_start = start + 1
+    while new_start < end and text[new_start].isspace():
+        new_start += 1
+
+    if new_start >= end:
+        return start, end
+
+    return new_start, end
+
+
+def _is_plausible_english_person_name(value: str) -> bool:
+    tokens = value.split()
+    if not tokens:
+        return False
+
+    if tokens[0].rstrip(".").lower() == "dr":
+        tokens = tokens[1:]
+
+    if not 1 <= len(tokens) <= 4:
+        return False
+
+    for token in tokens:
+        if token.lower() in _PERSON_NAME_BLOCKLIST:
+            return False
+        if re.fullmatch(_ENGLISH_GIVEN_NAME, token) is None:
+            return False
+
+    return True
+
+
+def _find_contextual_persons(
+    text: str,
+    found: list[RuleEntity],
+) -> None:
+    """Recover English PERSON spans the model missed, using narrow cues."""
+
+    for pattern in _CONTEXTUAL_PERSON_PATTERNS:
+        for match in pattern.finditer(text):
+            start, end = match.start("name"), match.end("name")
+            value = text[start:end]
+            if not _is_plausible_english_person_name(value):
+                continue
+            _append(found, text, start, end, "PERSON", 0.86)
+
+
 # PUBLIC ENTRY POINT
 
 def find_rule_entities(text: str) -> list[RuleEntity]:
@@ -770,5 +940,6 @@ def find_rule_entities(text: str) -> list[RuleEntity]:
     _find_phones(text, found)
     _find_emails(text, found)
     _find_addresses(text, found)
+    _find_contextual_persons(text, found)
 
     return _prefer_longer(found)

@@ -6,6 +6,7 @@ from app.sensitive.offsets import (
     canonicalize_egyptian_national_ids,
     polish_entity_span,
     reconstruct_entities,
+    replace_matched_wrappers_with_spaces,
     trim_entity_boundaries,
 )
 
@@ -97,6 +98,18 @@ def test_trim_entity_boundaries_strips_wrapping_punctuation() -> None:
     t_start, t_end = trim_entity_boundaries(wrapped, e_start, e_end, "EMAIL")
     assert wrapped[t_start:t_end] == email
 
+    egyptian = "Contact: (01012345678)."
+    egyptian_phone = "01012345678"
+    wrapped_start = egyptian.index("(")
+    wrapped_end = egyptian.index(")") + 1
+    phone_start, phone_end = trim_entity_boundaries(
+        egyptian,
+        wrapped_start,
+        wrapped_end,
+        "PHONE",
+    )
+    assert egyptian[phone_start:phone_end] == egyptian_phone
+
 
 def test_polish_keeps_plus_and_arabic_indic_digits() -> None:
     text = "Call +201012345678 now"
@@ -135,3 +148,20 @@ def test_canonicalize_duplicate_national_id_labels() -> None:
     assert len(national) == 1
     assert national[0].entity == "ID_CARD_NUMBER"
     assert any(span.entity == "PERSON" for span in resolved)
+
+
+def test_replace_matched_wrappers_preserves_length_and_inner_offsets() -> None:
+    text = "Patient ('John Smith') was seen."
+    name = "John Smith"
+    unwrapped = replace_matched_wrappers_with_spaces(text)
+
+    assert len(unwrapped) == len(text)
+    start = text.index(name)
+    end = start + len(name)
+    assert text[start:end] == name
+    assert unwrapped[start:end] == name
+    assert unwrapped[start - 1] == " "
+    assert unwrapped[end] == " "
+
+    apostrophe = "Call O'Brien today."
+    assert replace_matched_wrappers_with_spaces(apostrophe) == apostrophe

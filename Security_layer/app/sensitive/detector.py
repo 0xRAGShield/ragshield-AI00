@@ -14,17 +14,21 @@ from app.sensitive.model import (
 )
 from app.sensitive.offsets import (
     EntitySpan,
+    add_non_overlapping_spans,
     integrate_rule_spans,
     merge_adjacent_person_spans,
     merge_adjacent_spans,
     polish_entity_span,
     reconstruct_entities,
+    replace_matched_wrappers_with_spaces,
 )
 from app.sensitive.rules import (
     adjust_numeric_identifier_label,
+    expand_person_honorific,
     find_rule_entities,
     is_generic_clinical_address,
     is_spurious_identifier,
+    trim_arabic_person_proclitic,
     trim_person_clinical_tail,
 )
 from app.sensitive.schemas import (
@@ -41,12 +45,7 @@ class SensitiveDataDetectorError(RuntimeError):
 
 
 def normalize_entity_label(label: str) -> str:
-    """
-    Normalize equivalent entity labels to a single canonical label.
-
-    The model's internal label IDs and configuration remain unchanged.
-    Normalization affects the detector's processed output only.
-    """
+   
     label_aliases = {
         "ID_CARD_NUMBER": "NATIONAL_ID",
     }
@@ -140,10 +139,7 @@ class SensitiveDataDetector:
             entities=entities,
         )
 
-    def _predict_entities(
-        self,
-        text: str,
-    ) -> list[RawEntityPrediction]:
+    def _collect_spans(self, inference_text: str) -> list[EntitySpan]:
         run_token_classification = getattr(
             self._model,
             "run_token_classification",
@@ -151,10 +147,10 @@ class SensitiveDataDetector:
         )
 
         if callable(run_token_classification):
-            annotations = run_token_classification(text)
+            annotations = run_token_classification(inference_text)
 
             spans = reconstruct_entities(
-                text,
+                inference_text,
                 annotations,
                 confidence_threshold=self._config.confidence_threshold,
             )
@@ -171,7 +167,7 @@ class SensitiveDataDetector:
             ]
 
         else:
-            predictions = list(self._model.predict(text))
+            predictions = list(self._model.predict(inference_text))
 
         model_spans: list[EntitySpan] = []
 
@@ -183,7 +179,7 @@ class SensitiveDataDetector:
                 continue
 
             if is_spurious_identifier(
-                text,
+                inference_text,
                 prediction.start,
                 prediction.end,
                 prediction.label,
@@ -200,7 +196,7 @@ class SensitiveDataDetector:
                 )
             )
 
-        model_spans = merge_adjacent_spans(text, model_spans)
+        model_spans = merge_adjacent_spans(inference_text, model_spans)
 
         rule_spans = [
             EntitySpan(
@@ -210,13 +206,41 @@ class SensitiveDataDetector:
                 end=rule.end,
                 confidence=rule.score,
             )
-            for rule in find_rule_entities(text)
+            for rule in find_rule_entities(inference_text)
         ]
 
         combined = integrate_rule_spans(model_spans, rule_spans)
+        return merge_adjacent_person_spans(inference_text, combined)
 
-        # Merge conservatively fragmented PERSON entities.
-        combined = merge_adjacent_person_spans(text, combined)
+    def _spans_aligned_to_original(
+        self,
+        original_text: str,
+        spans: list[EntitySpan],
+    ) -> list[EntitySpan]:
+        aligned: list[EntitySpan] = []
+        for span in spans:
+            if not (0 <= span.start < span.end <= len(original_text)):
+                continue
+            value = original_text[span.start:span.end]
+            if value != span.text:
+                continue
+            aligned.append(span)
+        return aligned
+
+    def _predict_entities(
+        self,
+        text: str,
+    ) -> list[RawEntityPrediction]:
+        combined = self._collect_spans(text)
+
+        unwrapped = replace_matched_wrappers_with_spaces(text)
+        if unwrapped != text:
+            unwrapped_spans = self._spans_aligned_to_original(
+                text,
+                self._collect_spans(unwrapped),
+            )
+            combined = add_non_overlapping_spans(combined, unwrapped_spans)
+            combined = merge_adjacent_person_spans(text, combined)
 
         polished: list[RawEntityPrediction] = []
 
@@ -240,6 +264,30 @@ class SensitiveDataDetector:
                 text,
                 cleaned.start,
                 cleaned.end,
+                cleaned.entity,
+            )
+
+            if corrected_offsets is None:
+                continue
+
+            corrected_start, corrected_end = corrected_offsets
+
+            corrected_offsets = trim_arabic_person_proclitic(
+                text,
+                corrected_start,
+                corrected_end,
+                cleaned.entity,
+            )
+
+            if corrected_offsets is None:
+                continue
+
+            corrected_start, corrected_end = corrected_offsets
+
+            corrected_offsets = expand_person_honorific(
+                text,
+                corrected_start,
+                corrected_end,
                 cleaned.entity,
             )
 
