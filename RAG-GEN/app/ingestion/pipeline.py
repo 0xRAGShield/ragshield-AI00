@@ -36,11 +36,13 @@ class IngestionPipeline:
         chunker: ParentChildChunker,
         indexer: Indexer,
         state_dir: str | Path | None = None,
+        refresh_image_descriptions: bool = False,
     ) -> None:
         self._parser = parser
         self._chunker = chunker
         self._indexer = indexer
         self._state_dir = state_dir
+        self._refresh_image_descriptions = refresh_image_descriptions
 
     def run(self, data_path: str | Path) -> IngestionResult:
         state_dir = self._state_dir
@@ -54,6 +56,9 @@ class IngestionPipeline:
             indexer=self._indexer,
             store=self._indexer.store,
             state_dir=state_dir,
+            refresh_image_descriptions=(
+                self._refresh_image_descriptions
+            ),
         ).run(data_path)
 
         return IngestionResult(

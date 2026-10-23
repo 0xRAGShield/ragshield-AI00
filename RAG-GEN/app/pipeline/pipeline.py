@@ -69,7 +69,7 @@ class RAGPipelineResult:
     reranking: RerankedResult
     context: AssembledContext
     prompt: LLMPrompt
-    generation: GenerationResult
+    generation: GenerationResult | None
     is_degraded: bool
     images: tuple[RetrievedImage, ...]
 
@@ -440,12 +440,16 @@ class RAGPipeline:
             )
 
         except Exception as exc:
-            raise PipelineError(
-                "LLM generation failed.",
-                stage="llm",
-                trace_id=trace_id,
-                cause=exc,
-            ) from exc
+            logger.exception(
+                "LLM generation failed; returning retrieved images. "
+                "trace_id=%s",
+                trace_id,
+            )
+            print(
+                f">>> LLM FAILED: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            generation = None
 
         # ============================================================
         # DEGRADED STATUS
@@ -458,18 +462,21 @@ class RAGPipeline:
             or reranking.is_fallback
             or context.is_degraded
             or prompt.is_degraded
+            or generation is None
         )
 
         # ============================================================
         # RESULT
         # ============================================================
 
+        settings = get_settings()
         images = tuple(
             to_public_image_urls(
                 collect_retrieved_images(
                     reranking.candidates
                 ),
-                get_settings().data_dir,
+                settings.data_dir,
+                public_base_url=settings.public_base_url,
             )
         )
 

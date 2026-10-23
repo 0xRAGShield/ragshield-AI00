@@ -143,6 +143,8 @@ class ContextSettings(BaseModel):
         "images",
         "relative_path",
         "content_sha256",
+        "image_description",
+        "description",
     )
 
     require_exact_tokenizer: bool = False
@@ -274,6 +276,30 @@ class AppSettings(BaseModel):
 
     ingest_on_startup: bool = True
 
+    refresh_image_descriptions: bool = False
+
+    public_base_url: str = ""
+
+    @field_validator("public_base_url")
+    @classmethod
+    def validate_public_base_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+
+        if not value:
+            return ""
+
+        lowered = value.casefold()
+
+        if not (
+            lowered.startswith("http://")
+            or lowered.startswith("https://")
+        ):
+            raise ValueError(
+                "public_base_url must start with http:// or https://"
+            )
+
+        return value
+
     retrieval: RetrievalSettings = Field(
         default_factory=RetrievalSettings
     )
@@ -335,6 +361,8 @@ def _apply_env_overrides(settings: AppSettings) -> AppSettings:
     data_dir = _env("DATA_DIR")
     ingest_state_dir = _env("INGEST_STATE_DIR")
     ingest_on_startup = _env("INGEST_ON_STARTUP")
+    refresh_image_descriptions = _env("INGEST_REFRESH_IMAGES")
+    public_base_url = _env("PUBLIC_BASE_URL")
 
     if retrieval_updates:
         settings = settings.model_copy(
@@ -369,6 +397,15 @@ def _apply_env_overrides(settings: AppSettings) -> AppSettings:
             "no",
             "off",
         }
+
+    if refresh_image_descriptions is not None:
+        extra_updates["refresh_image_descriptions"] = (
+            refresh_image_descriptions.casefold()
+            not in {"0", "false", "no", "off"}
+        )
+
+    if public_base_url is not None:
+        extra_updates["public_base_url"] = public_base_url
 
     if extra_updates:
         settings = settings.model_copy(update=extra_updates)

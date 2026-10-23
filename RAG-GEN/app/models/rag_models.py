@@ -329,6 +329,12 @@ class RetrievedImage(BaseModel):
 
     chunk_id: str | None = None
 
+    description: str | None = None
+
+    relative_url: str | None = None
+
+    absolute_url: str | None = None
+
     @field_validator("url", "source_id")
     @classmethod
     def validate_required_text(cls, value: str) -> str:

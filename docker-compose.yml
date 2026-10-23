@@ -42,6 +42,7 @@ services:
       RETRIEVAL_QDRANT_PORT: "6333"
       LLM_MODEL_PATH: models/qwen3-vl-8b
       DATA_DIR: /app/data
+      PUBLIC_BASE_URL: http://localhost:8000
       HF_HOME: /app/.cache/huggingface
       TRANSFORMERS_OFFLINE: "1"
       HF_HUB_OFFLINE: "1"

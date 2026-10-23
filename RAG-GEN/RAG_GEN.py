@@ -203,10 +203,20 @@ async def query(request: QueryRequest) -> QueryResponse:
             detail="RAG pipeline execution failed.",
         ) from exc
 
+    generation_failed = result.generation is None
+    answer = (
+        result.generation.text
+        if result.generation is not None
+        else (
+            "Answer generation failed, but retrieved sources are included. "
+            "Any matching medical images are listed in the images field."
+        )
+    )
+
     return QueryResponse(
-        answer=result.generation.text,
+        answer=answer,
         trace_id=result.trace_id,
-        degraded=result.is_degraded,
+        degraded=bool(result.is_degraded or generation_failed),
         retrieved_candidates=len(result.retrieval.candidates),
         reranked_candidates=len(result.reranking.candidates),
         evidence_items=len(result.context.evidence),

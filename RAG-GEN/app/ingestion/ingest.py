@@ -33,6 +33,9 @@ pipeline = IngestionPipeline(
     chunker=ParentChildChunker(),
     indexer=indexer,
     state_dir=settings.ingest_state_dir,
+    refresh_image_descriptions=(
+        settings.refresh_image_descriptions
+    ),
 )
 
 result = pipeline.run(DATA_PATH)

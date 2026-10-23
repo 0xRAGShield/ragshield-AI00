@@ -1,7 +1,9 @@
 
 # RAGShield
 
-RAGShield is a FastAPI-based retrieval-augmented generation (RAG) service. It embeds queries with **BGE-M3**, searches a **Qdrant** vector store, re-ranks results with a **Cross-Encoder**, and generates answers with a locally hosted **Qwen3-VL-8B-Instruct** model.
+RAGShield is a FastAPI-based retrieval-augmented generation (RAG) service for healthcare documents and medical images. It embeds queries with **BGE-M3**, searches a **Qdrant** vector store, re-ranks results with a **Cross-Encoder**, and generates answers with a locally hosted **Qwen3-VL-8B-Instruct** model.
+
+Image files are indexed from **filename, path, and explicit metadata** (not from pixels). The API can return clickable media URLs for retrieved images. There is **no OCR** and **no visual embedding** of image contents.
 
 ## Workflow
 
@@ -10,13 +12,15 @@ POST /query
   → embed query (BGE-M3)
   → retrieve from Qdrant (collection: ragshield_test)
   → re-rank (cross-encoder/ms-marco-MiniLM-L-6-v2)
+  → collect image references from reranked evidence
   → build context + prompt
   → generate answer (Qwen3-VL)
+  → if generation fails, return degraded=true with retrieved images
 ```
 
-**Ingestion (offline):** documents under `data/` are parsed, chunked, embedded, and upserted into Qdrant via `RAG-GEN/app/ingestion/ingest.py`.
+**Ingestion:** files under `DATA_DIR` (default `data/`) are discovered incrementally at API startup and by `RAG-GEN/app/ingestion/ingest.py`. Only new or modified files are parsed, chunked, embedded, and upserted. Unchanged files are skipped. Missing files are not deleted from Qdrant.
 
-**Query (online):** `RAG-GEN/RAG_GEN.py` exposes `GET /health` and `POST /query`.
+**Query:** `RAG-GEN/RAG_GEN.py` exposes `GET /health`, `POST /query`, and `GET /media/{path}`.
 
 ## Project layout
 
@@ -92,12 +96,26 @@ Key packages: `fastapi`, `uvicorn`, `qdrant-client`, `sentence-transformers`, `t
 | `RETRIEVAL_QDRANT_HOST`     | `localhost`                 | Qdrant hostname (`qdrant` in Docker Compose)     |
 | `RETRIEVAL_QDRANT_PORT`     | `6333`                      | Qdrant HTTP port                                   |
 | `RETRIEVAL_COLLECTION_NAME` | `ragshield_test`            | Qdrant collection name                             |
-| `LLM_MODEL_PATH`            | `models/qwen3-vl-8b`        | Path to Qwen3-VL weights (relative to`RAG-GEN/`) |
+| `LLM_MODEL_PATH`            | `models/qwen3-vl-8b`        | Path to Qwen3-VL weights (relative to `RAG-GEN/`) |
 | `LLM_MODEL_ID`              | `Qwen/Qwen3-VL-8B-Instruct` | Model identifier                                   |
 | `LLM_DEVICE`                | `auto`                      | `auto`, `cuda`, or `cpu`                     |
 | `LLM_QUANTIZATION`          | `4bit`                      | `4bit`, `8bit`, or `none`                    |
+| `DATA_DIR`                  | repo `data/`                | Corpus root (`documents/` and `images/`)         |
+| `PUBLIC_BASE_URL`           | _(empty)_                   | Public origin used to build clickable image URLs (`http://` or `https://` only). Do not trust client `Host` headers. |
+| `INGEST_ON_STARTUP`         | `true`                      | Scan `DATA_DIR` and ingest new/changed files when the API starts |
+| `INGEST_STATE_DIR`          | `RAG-GEN/ingestion_state/`  | Manifest and ingest lock files                     |
+| `INGEST_REFRESH_IMAGES`     | `false`                     | When running `ingest.py`, re-index existing image files so new `image_description` text is embedded. **Not** applied on API startup. |
 
 **External service:** Qdrant must be reachable at the configured host/port.
+
+Set `PUBLIC_BASE_URL` to the URL that **clients** use to reach the API, for example:
+
+- Local process: `http://127.0.0.1:8000`
+- Docker published port: `http://localhost:8000`
+- Colab or a tunnel: the **public proxy URL**, not the VM loopback address
+- Reverse proxy: `https://your.example.com`
+
+`127.0.0.1` is only reachable on the machine that runs the server. It is not a public internet URL.
 
 ## Local setup
 
@@ -258,7 +276,82 @@ docker compose down -v
 ```
 
 
-<pre class="overflow-visible! px-0!" data-start="8355" data-end="8395"><div class="relative w-full mt-4 mb-1"><div class=""><div class="contents"><div class="border border-token-border-light border-radius-3xl corner-superellipse/1.1 rounded-3xl"><div class="relative h-full w-full border-radius-3xl bg-(--code-block-surface) corner-superellipse/1.1 overflow-clip rounded-3xl [--code-block-surface:var(--bg-elevated-secondary)] dark:[--code-block-surface:var(--composer-surface-primary)] lxnfua_clipPathFallback"><div class="pointer-events-none absolute inset-x-4 top-12 bottom-4"><div class="pointer-events-none sticky z-40 shrink-0 z-1!"><div class="sticky bg-token-border-light"></div></div></div></div></div></div></div></div></pre>
+## Image ingestion and semantic retrieval
+
+Supported image extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tif`, `.tiff`.
+
+Each image is usually one child chunk when the description fits in `child_chunk_size` (400 characters). The embedding is built from that `image_description` string, which already includes the filename plus type aliases. The description is derived from **filename tokens, path segments, and explicit metadata** (`image_description`, `description`, `caption`, `alt_text`, `patient_name` if already present).
+
+The pipeline does **not** read pixels, run OCR, or generate visual embeddings. A name such as `Maram` is taken from a filename like `maram_abdelbaky_prescription.jpeg` and is treated as a **filename label**, not a verified patient identity.
+
+Example stored description (shape, not a guaranteed exact string):
+
+```text
+Prescription image labeled Maram Abdelbaky (from filename, not verified identity).
+Document type aliases: prescription, medical prescription, روشتة.
+Searchable aliases: Maram Abdelbaky prescription, Maram prescription, prescription for Maram Abdelbaky, prescription for Maram, روشتة Maram Abdelbaky, روشتة Maram.
+Filename: maram_abdelbaky_prescription.jpeg.
+```
+
+That text is what BGE-M3 embeds and the reranker scores. Queries that share those tokens can omit the raw filename:
+
+- `Show me Maram's prescription` (Latin name + English type)
+- `عايزه روشتة Maram` (Arabic type alias + Latin filename token)
+
+Queries that use an Arabic **name** not present in the filename, such as `عايزة الروشتة بتاعت مرام` or `عايزة صورة الروشتة الخاصة بمرام`, share only `روشتة` with the indexed text. Matching `مرام` to `Maram` is not implemented.
+
+Relevance still depends on retrieval and reranking. A generic query such as “روشتة” can match several prescription files; more specific tokens (a name label in the filename) rank the corresponding image higher. Unrelated images should not share a unique name token.
+
+Qdrant payload metadata includes `file_name`, `file_type`, `image_path`, `image_url`, `image_description`, `relative_path`, `content_sha256`, `source_id`, and `chunk_id`. `source_id` / `chunk_id` conventions are unchanged.
+
+### Updating existing Qdrant points
+
+API startup **does not** rewrite descriptions for unchanged image files and **does not** migrate the live collection.
+
+To embed the new descriptions for images that are already indexed:
+
+```powershell
+cd RAG-GEN
+$env:INGEST_REFRESH_IMAGES="true"
+python app/ingestion/ingest.py
+```
+
+```bash
+cd RAG-GEN
+INGEST_REFRESH_IMAGES=true python app/ingestion/ingest.py
+```
+
+That command re-processes image files only (text documents with unchanged hashes stay skipped). Alternatively, change an image file so its SHA-256 changes, then restart the API or run ingest without the refresh flag.
+
+Until that refresh (or a content change) runs, older image points remain searchable only by previously indexed filename/path text.
+
+Refresh re-queues only files whose suffix is an image extension **and** that were classified as unchanged. It does not re-embed unchanged PDFs/TXT files. It does not re-queue **unverified** files (legacy points that cannot be matched safely). Same-path image points keep the same `source_id`/`chunk_id`, so Qdrant upsert overwrites the existing point instead of inserting a duplicate.
+
+## Media URLs
+
+`GET /media/{path}` serves image files that resolve **inside** `DATA_DIR` and have a supported image extension. Path traversal and non-image files return 404.
+
+`POST /query` returns image objects with:
+
+| Field | Meaning |
+| --- | --- |
+| `url` | Clickable URL: `PUBLIC_BASE_URL` + `/media/...` when the base URL is set; otherwise the relative `/media/...` path |
+| `relative_url` | Always `/media/...` when the file is under `DATA_DIR` |
+| `absolute_url` | Fully qualified URL when `PUBLIC_BASE_URL` is set; otherwise `null` |
+| `description` | Indexed `image_description` when present on the retrieved record |
+| `media_type`, `source`, `document_id`, `chunk_id`, `source_id` | Existing provenance fields |
+
+Filesystem paths are not returned in these URL fields.
+
+## Degraded generation
+
+If retrieval and reranking succeed but the LLM/VLM fails (for example CUDA out-of-memory), the API does **not** turn that into an HTTP 500. The response includes:
+
+- `degraded: true`
+- a fallback `answer` stating that generation failed
+- any `images` collected from reranked evidence, with media URLs
+
+Failures before generation (retrieval, rerank, context, prompt) still follow the existing HTTP 500 path.
 
 ## API
 
@@ -272,19 +365,56 @@ docker compose down -v
 
 ```json
 {
-  "query": "What are common diabetes symptoms?",
+  "query": "Show me Maram's prescription",
   "top_k": 8,
   "top_n": 5,
   "max_new_tokens": 512
 }
 ```
 
-Response fields: `answer`, `trace_id`, `degraded`, `retrieved_candidates`, `reranked_candidates`, `evidence_items`.
+```json
+{
+  "answer": "...",
+  "trace_id": "...",
+  "degraded": false,
+  "retrieved_candidates": 5,
+  "reranked_candidates": 3,
+  "evidence_items": 3,
+  "images": [
+    {
+      "url": "http://127.0.0.1:8000/media/images/maram_abdelbaky_prescription.jpeg",
+      "relative_url": "/media/images/maram_abdelbaky_prescription.jpeg",
+      "absolute_url": "http://127.0.0.1:8000/media/images/maram_abdelbaky_prescription.jpeg",
+      "source": "maram_abdelbaky_prescription.jpeg",
+      "media_type": "image/jpeg",
+      "image_type": null,
+      "document_id": "...",
+      "source_id": "...",
+      "chunk_id": "...",
+      "description": "Prescription image labeled Maram Abdelbaky (from filename, not verified identity). ..."
+    }
+  ]
+}
+```
+
+The `url` example assumes `PUBLIC_BASE_URL=http://127.0.0.1:8000`. Without that setting, `url` is the relative `/media/...` path and `absolute_url` is `null`.
+
+### `GET /media/{path}`
+
+Example: `GET http://127.0.0.1:8000/media/images/maram_abdelbaky_prescription.jpeg` returns the image bytes when that file exists under `DATA_DIR`.
 
 ## Tests
 
+From the repository root (`ragshield-AI00`), with `PYTHONPATH` including `RAG-GEN`:
+
 ```bash
 pytest tests/ -v
+```
+
+Incremental ingestion mocks (no live Qdrant or embedding model):
+
+```bash
+pytest tests/ingestions/test_incremental.py -v
 ```
 
 Integration test against live models and Qdrant:
@@ -292,3 +422,12 @@ Integration test against live models and Qdrant:
 ```bash
 RUN_REAL_RAG=1 pytest tests/integration/ -v
 ```
+
+## Limitations
+
+- Image search quality depends on filenames, folders, and any explicit metadata. Opaque names (`img001.png`) will not match “Maram’s prescription”.
+- Indexed aliases for `maram_abdelbaky_prescription.jpeg` include Latin tokens (`Maram`, `prescription`) and the Arabic **type** word `روشتة`. The Arabic **name** `مرام` is **not** written into the index unless it already appears in the filename or explicit metadata. A query such as `عايزة الروشتة بتاعت مرام` is therefore guaranteed only to share `روشتة` with the indexed text; matching `مرام` to `Maram` is not implemented as transliteration and must not be assumed.
+- Existing Qdrant points do not gain `image_description` until image refresh or a content-changing re-ingest.
+- `PUBLIC_BASE_URL` must be set by the operator. The API does not invent a public hostname from request headers.
+- Google Colab: configure `PUBLIC_BASE_URL` to the URL Colab (or your tunnel) exposes to the browser. `http://127.0.0.1:8000` inside the Colab VM is not automatically reachable from your laptop.
+- Incremental ingest does not remove Qdrant points when a source file is deleted from disk.

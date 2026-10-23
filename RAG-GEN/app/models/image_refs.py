@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+from urllib.parse import quote
 
 from app.models.evidence_models import ImageDocument, SourceDocument
 from app.models.rag_models import RetrievedImage
@@ -37,6 +39,50 @@ _IMAGE_LIST_KEYS = (
 )
 
 _IMAGE_EXTENSIONS = IMAGE_FILE_EXTENSIONS
+
+_TOKEN_SPLIT = re.compile(r"[_\-\s.]+")
+
+_GENERIC_FILENAME_TOKENS = frozenset(
+    {
+        "image",
+        "img",
+        "photo",
+        "picture",
+        "pic",
+        "file",
+        "scan",
+        "document",
+        "doc",
+        "images",
+        "data",
+    }
+)
+
+_TYPE_HINTS: dict[str, tuple[str, ...]] = {
+    "prescription": (
+        "prescription",
+        "medical prescription",
+        "روشتة",
+    ),
+    "roshte": ("prescription", "روشتة"),
+    "rosheta": ("prescription", "روشتة"),
+    "roshita": ("prescription", "روشتة"),
+    "rx": ("prescription", "روشتة"),
+    "xray": ("x-ray", "X-ray", "أشعة"),
+    "x-ray": ("x-ray", "أشعة"),
+    "radiograph": ("x-ray", "أشعة"),
+    "mri": ("MRI", "رنين مغناطيسي"),
+    "ct": ("CT scan", "أشعة مقطعية"),
+    "ultrasound": ("ultrasound", "سونار"),
+    "sonogram": ("ultrasound", "سونار"),
+    "lab": ("laboratory result", "تحليل"),
+    "labs": ("laboratory result", "تحليل"),
+    "analysis": ("analysis", "تحليل"),
+    "tahlil": ("laboratory result", "تحليل"),
+    "blood": ("blood test", "تحليل دم"),
+    "cbc": ("blood analysis", "تحليل دم"),
+    "report": ("report", "تقرير"),
+}
 
 _URL_KEYS = (
     "url",
@@ -107,6 +153,14 @@ def source_document_from_image(
     else:
         metadata["image_url"] = storage_ref
 
+    description = build_image_description(
+        image,
+        metadata=metadata,
+        data_dir=data_dir,
+    )
+    metadata["image_description"] = description
+    metadata.setdefault("description", description)
+
     metadata["images"] = _unique_image_dicts(
         [
             {
@@ -122,6 +176,7 @@ def source_document_from_image(
                     metadata.get("document_id")
                 )
                 or image.source_id,
+                "image_description": description,
             }
         ]
     )
@@ -132,6 +187,7 @@ def source_document_from_image(
         text=_searchable_image_text(
             image,
             data_dir=data_dir,
+            description=description,
         ),
         media_type=image.media_type,
         metadata=metadata,
@@ -209,6 +265,11 @@ def collect_retrieved_images(
                     ),
                     source=image.get("source"),
                     chunk_id=chunk_id,
+                    description=_optional_str(
+                        metadata.get("image_description")
+                        or metadata.get("description")
+                        or image.get("image_description")
+                    ),
                 )
             )
 
@@ -218,20 +279,44 @@ def collect_retrieved_images(
 def to_public_image_urls(
     images: Sequence[RetrievedImage],
     data_dir: str | Path | None,
+    public_base_url: str | None = None,
 ) -> list[RetrievedImage]:
     """Rewrite local corpus paths to API media URLs. Keep HTTP(S) refs."""
 
-    return [
-        image.model_copy(
-            update={
-                "url": to_public_image_url(
-                    image.url,
-                    data_dir,
-                )
-            }
+    rewritten: list[RetrievedImage] = []
+
+    for image in images:
+        media_url = to_public_image_url(
+            image.url,
+            data_dir,
         )
-        for image in images
-    ]
+
+        if not media_url:
+            continue
+
+        if _is_http_url(media_url):
+            absolute = media_url
+            relative: str | None = image.relative_url
+            clickable = media_url
+        else:
+            relative = media_url
+            absolute = _join_public_base_url(
+                public_base_url,
+                media_url,
+            )
+            clickable = absolute or relative
+
+        rewritten.append(
+            image.model_copy(
+                update={
+                    "url": clickable,
+                    "relative_url": relative,
+                    "absolute_url": absolute,
+                }
+            )
+        )
+
+    return rewritten
 
 
 def to_public_image_url(
@@ -240,15 +325,39 @@ def to_public_image_url(
 ) -> str:
     text = (reference or "").strip()
 
-    if not text or _is_http_url(text):
+    if not text:
+        return ""
+
+    if _is_http_url(text):
         return text
+
+    if text.startswith(f"{MEDIA_ROUTE_PREFIX}/") or text == MEDIA_ROUTE_PREFIX:
+        return text.split("?", 1)[0]
 
     relative = _relative_to_data_dir(text, data_dir)
 
     if relative is None:
-        return text
+        return ""
 
-    return f"{MEDIA_ROUTE_PREFIX}/{relative.as_posix()}"
+    encoded = quote(relative.as_posix(), safe="/")
+    return f"{MEDIA_ROUTE_PREFIX}/{encoded}"
+
+
+def _join_public_base_url(
+    public_base_url: str | None,
+    relative_url: str,
+) -> str | None:
+    base = (public_base_url or "").strip().rstrip("/")
+
+    if not base:
+        return None
+
+    path = (
+        relative_url
+        if relative_url.startswith("/")
+        else f"/{relative_url}"
+    )
+    return f"{base}{path}"
 
 
 def media_file_from_data_dir(
@@ -332,12 +441,192 @@ def collect_image_dicts(
     return _unique_image_dicts(parsed)
 
 
+def build_image_description(
+    image: ImageDocument,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+    data_dir: str | Path | None = None,
+) -> str:
+    """
+    Build a searchable description from filename, path, and explicit metadata.
+
+    Does not inspect pixels or invent a clinical identity.
+    """
+
+    meta = dict(metadata or {})
+    explicit = _first_non_empty_str(
+        meta.get("image_description"),
+        meta.get("description"),
+        meta.get("caption"),
+        meta.get("alt_text"),
+    )
+    path = Path(image.image_path)
+    relative = _relative_to_data_dir(str(path), data_dir)
+    stem = path.stem
+    file_name = meta.get("file_name") or image.title or path.name
+    tokens = _filename_tokens(stem)
+
+    if relative is not None:
+        for part in relative.parts[:-1]:
+            tokens.extend(_filename_tokens(Path(part).stem))
+
+    type_labels, label_tokens = _labels_from_tokens(tokens)
+    provided_name = _first_non_empty_str(
+        meta.get("patient_name"),
+        meta.get("subject_name"),
+        meta.get("person_name"),
+    )
+    name_label = provided_name or " ".join(label_tokens)
+
+    if explicit:
+        parts = [explicit.strip()]
+    elif type_labels and name_label:
+        english_type = type_labels[0]
+        parts = [
+            f"{english_type.capitalize()} image labeled {name_label} "
+            f"(from filename, not verified identity)."
+        ]
+    elif type_labels:
+        parts = [
+            f"{type_labels[0].capitalize()} image. "
+            "No person name was present in the filename or metadata."
+        ]
+    elif name_label:
+        parts = [
+            f"Medical image labeled {name_label} "
+            f"(from filename, not verified identity)."
+        ]
+    else:
+        parts = [
+            f"Medical image file {file_name}."
+        ]
+
+    if type_labels:
+        unique_types: list[str] = []
+        seen_types: set[str] = set()
+
+        for label in type_labels:
+            key = label.casefold()
+
+            if key in seen_types:
+                continue
+
+            seen_types.add(key)
+            unique_types.append(label)
+
+        parts.append(
+            "Document type aliases: " + ", ".join(unique_types) + "."
+        )
+
+    aliases = _search_aliases(name_label, type_labels)
+
+    if aliases:
+        parts.append("Searchable aliases: " + ", ".join(aliases) + ".")
+
+    parts.append(f"Filename: {file_name}.")
+    return " ".join(parts)
+
+
+def _filename_tokens(stem: str) -> list[str]:
+    return [
+        token
+        for token in _TOKEN_SPLIT.split(stem)
+        if token and token.casefold() not in _GENERIC_FILENAME_TOKENS
+    ]
+
+
+def _labels_from_tokens(
+    tokens: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    type_labels: list[str] = []
+    name_tokens: list[str] = []
+
+    for token in tokens:
+        hints = _TYPE_HINTS.get(token.casefold())
+
+        if hints:
+            type_labels.extend(hints)
+            continue
+
+        name_tokens.append(token if token.isupper() else token.capitalize())
+
+    return type_labels, name_tokens
+
+
+def _search_aliases(
+    name_label: str,
+    type_labels: Sequence[str],
+) -> list[str]:
+    aliases: list[str] = []
+    seen: set[str] = set()
+    name_parts = [part for part in name_label.split() if part]
+    arabic_types = [
+        label
+        for label in type_labels
+        if any("\u0600" <= char <= "\u06FF" for char in label)
+    ]
+    english_types = [
+        label
+        for label in type_labels
+        if label not in arabic_types
+    ]
+
+    candidates: list[str] = []
+
+    if name_parts and english_types:
+        first = name_parts[0]
+        full = " ".join(name_parts)
+        primary = english_types[0]
+        candidates.extend(
+            [
+                f"{full} {primary}",
+                f"{first} {primary}",
+                f"{primary} for {full}",
+                f"{primary} for {first}",
+            ]
+        )
+
+        for arabic in arabic_types:
+            candidates.extend(
+                [
+                    f"{arabic} {full}",
+                    f"{arabic} {first}",
+                ]
+            )
+
+    for candidate in candidates:
+        key = candidate.casefold()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        aliases.append(candidate)
+
+    return aliases
+
+
 def _searchable_image_text(
     image: ImageDocument,
     data_dir: str | Path | None = None,
+    description: str | None = None,
 ) -> str:
     path = Path(image.image_path)
     tokens: list[str] = []
+
+    if description:
+        # Description already includes filename and type aliases.
+        # Do not append the same tokens again or the image may split
+        # into extra chunks and be embedded more than once.
+        text = description.strip()
+
+        if not text:
+            raise ValueError(
+                f"Cannot index image without filename provenance: "
+                f"{image.source_id}"
+            )
+
+        return text
 
     for value in (
         image.title,

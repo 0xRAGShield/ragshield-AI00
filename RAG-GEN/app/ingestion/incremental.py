@@ -87,12 +87,14 @@ class IncrementalIngestor:
         indexer: Indexer,
         store: QdrantStore,
         state_dir: str | Path,
+        refresh_image_descriptions: bool = False,
     ) -> None:
         self._parser = parser
         self._chunker = chunker
         self._indexer = indexer
         self._store = store
         self._state_dir = Path(state_dir)
+        self._refresh_image_descriptions = refresh_image_descriptions
         self._manifest_path = (
             self._state_dir
             / f"{store.collection_name}.manifest.json"
@@ -192,6 +194,28 @@ class IncrementalIngestor:
                 catalog=catalog,
             )
             classified[status].append(record)
+
+        if self._refresh_image_descriptions:
+            kept_unchanged: list[_FileRecord] = []
+            refreshed = 0
+
+            for record in classified["unchanged"]:
+                if (
+                    record.path.suffix.lower()
+                    in self._parser.IMAGE_EXTENSIONS
+                ):
+                    classified["modified"].append(record)
+                    refreshed += 1
+                else:
+                    kept_unchanged.append(record)
+
+            classified["unchanged"] = kept_unchanged
+
+            if refreshed:
+                logger.info(
+                    "Queued unchanged image files for description refresh",
+                    extra={"images_queued": refreshed},
+                )
 
         logger.info(
             "Incremental ingestion scan complete",
