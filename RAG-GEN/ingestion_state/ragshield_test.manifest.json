@@ -1,0 +1,162 @@
+{
+  "files": {
+    "documents/Allergy.pdf": {
+      "bootstrapped": true,
+      "chunk_count": null,
+      "content_sha256": "3eaa27c26680c9d06bd508cde02bd86832490d14dc3011c6cf46c8f079dce99a",
+      "indexed_at": "2026-10-22T10:46:03+00:00",
+      "relative_path": "documents/Allergy.pdf",
+      "source_id": "b41670d9e20df562af6c5e6c44d3a71cc8fe68d0a120c236d75b2c0d65453f70",
+      "status": "indexed"
+    },
+    "documents/Diseases.pdf": {
+      "bootstrapped": true,
+      "chunk_count": null,
+      "content_sha256": "a3aa0d2581800ab0cca5a082e58b42f18d253b186926a495172252f849b17f11",
+      "indexed_at": "2026-10-22T10:46:03+00:00",
+      "relative_path": "documents/Diseases.pdf",
+      "source_id": "eef790568bd9945d34a820adbba8b46409e8f8721565464c34728727638b491b",
+      "status": "indexed"
+    },
+    "documents/Healthcare_Info.txt": {
+      "bootstrapped": true,
+      "chunk_count": null,
+      "content_sha256": "9d98c242a20e44c9607a29eb871b3c84e464a98a8fe83155bc65c7ea04f79bde",
+      "indexed_at": "2026-10-22T10:46:03+00:00",
+      "relative_path": "documents/Healthcare_Info.txt",
+      "source_id": "37644ca9ef34b25c1cff9e7d4ab6e8ac45c5ecd1270bff7fc56616afb237a621",
+      "status": "indexed"
+    },
+    "documents/Understanding Cancer_ Awareness & Prevention.pdf": {
+      "bootstrapped": true,
+      "chunk_count": null,
+      "content_sha256": "f8e41fcebb9599ebf79ff2825ce9776041ff47f30666d0850717645679d66da2",
+      "indexed_at": "2026-10-22T10:46:03+00:00",
+      "relative_path": "documents/Understanding Cancer_ Awareness & Prevention.pdf",
+      "source_id": "705c91635edf1af36ef10529f1120dc8435438b1e8447d7fd2d0eb6493a4d066",
+      "status": "indexed"
+    },
+    "documents/medical_cases_fake_data.docx": {
+      "bootstrapped": true,
+      "chunk_count": null,
+      "content_sha256": "0e46fc36c3b6520f7880f1e97c8d7bafc5da6fb21867b7e71a1a16780d8403ce",
+      "indexed_at": "2026-10-22T10:46:03+00:00",
+      "relative_path": "documents/medical_cases_fake_data.docx",
+      "source_id": "d657a71f096ade71c18b6d8ec4f270ee5bad57d4c4b270280cebb15f7485c02a",
+      "status": "indexed"
+    },
+    "images/AhmedElKhateeb.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "4e939ccb75c396ceba0a484e895b0c8e3c649ee2720a42be7d7d58470fbb2fd6",
+      "indexed_at": "2026-10-22T12:01:32+00:00",
+      "relative_path": "images/AhmedElKhateeb.jpeg",
+      "source_id": "f658137ba26701392d26ad7f02ee7e13ed9b4ec61d069b0261ee105b6b90fba2",
+      "status": "indexed"
+    },
+    "images/DR_ElKhateeb.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "c7e41febb1936c2745ba7ef6517990f07445a2158493f425650c1d80aca8712f",
+      "indexed_at": "2026-10-22T12:01:33+00:00",
+      "relative_path": "images/DR_ElKhateeb.jpeg",
+      "source_id": "55979a68409886d35f7e9616890f19bb1ca221d36eb9dd4a298d24a354d479cd",
+      "status": "indexed"
+    },
+    "images/MagdyMokhtar.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "de825f523320641466b1e90cd711fcb888303483c68612d2f1fef373325ef0c2",
+      "indexed_at": "2026-10-22T12:01:33+00:00",
+      "relative_path": "images/MagdyMokhtar.jpeg",
+      "source_id": "d550c3a50346d9a08a623b12ebc8b576c41f7115f990dbd3510d9c7ed08b62ef",
+      "status": "indexed"
+    },
+    "images/MohamedNabel.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "ad91234737a9b923b9832fcc104793e21f3773ee47922153ba62bfa57ca02850",
+      "indexed_at": "2026-10-22T12:01:35+00:00",
+      "relative_path": "images/MohamedNabel.jpeg",
+      "source_id": "4b5d95b9ae9113554ba77b57fc24f317610fd05b2699807d0f38cfe3102578b0",
+      "status": "indexed"
+    },
+    "images/azza_mohamed_prescription.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "c786f073b259a9f97bcc244ec7d6e53e556bf73d95b60b9207ebcd366beb5a99",
+      "indexed_at": "2026-10-22T12:01:32+00:00",
+      "relative_path": "images/azza_mohamed_prescription.jpeg",
+      "source_id": "fb7b2b7de997bc207a26ac2ae24664da8ba995c0f18d26a468a90575145073fe",
+      "status": "indexed"
+    },
+    "images/azza_mohamed_prescription2.png": {
+      "chunk_count": 1,
+      "content_sha256": "9632695eff88e616edbd724cc4d2891393016d02a92538416d5e89eca074e9f0",
+      "indexed_at": "2026-10-22T12:01:32+00:00",
+      "relative_path": "images/azza_mohamed_prescription2.png",
+      "source_id": "a3881585ac37d3c96b875382ba6c7a99031680d0fd88d2d163758de10ec647df",
+      "status": "indexed"
+    },
+    "images/manar_abdelbaky_ecg.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "a705f822a178da1b56b22575e6772413166984475771d53d46944c899396063e",
+      "indexed_at": "2026-10-22T12:01:33+00:00",
+      "relative_path": "images/manar_abdelbaky_ecg.jpeg",
+      "source_id": "a81679bad055d3543842468db3b9501084baff571af7ddcdbb9c913140ac2326",
+      "status": "indexed"
+    },
+    "images/manar_abdelbaky_lab_results.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "3fde1e7a6d2065ff7e201c0d99a331b0cd611fcf2d869a38a7689ae4a592dea0",
+      "indexed_at": "2026-10-22T12:01:33+00:00",
+      "relative_path": "images/manar_abdelbaky_lab_results.jpeg",
+      "source_id": "b520e3251cdb65fd72ff90a0cb489fec470fbbd58d45f697966f4e07ca271861",
+      "status": "indexed"
+    },
+    "images/manar_abdelbaky_prescription.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "8896946958ed9be8fd381aaaead7a5dd1ee7663347d96b621ae90067d586ba30",
+      "indexed_at": "2026-10-22T12:01:34+00:00",
+      "relative_path": "images/manar_abdelbaky_prescription.jpeg",
+      "source_id": "15da575e337b578c689538dac8d625825e94cc7133376d3809eeb5eb5904a899",
+      "status": "indexed"
+    },
+    "images/manar_abdelbaky_prescription2023.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "7a657ea9b41f838da3e9b6c0003931a9d82e0df1671ff199513e97698897a9d6",
+      "indexed_at": "2026-10-22T12:01:34+00:00",
+      "relative_path": "images/manar_abdelbaky_prescription2023.jpeg",
+      "source_id": "02e69b9df48e1e2f60ea20dfc3e48b716c43dfbc99ecaad36cdbd3a9e13e80e9",
+      "status": "indexed"
+    },
+    "images/manar_echo.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "874cb3cb3a031252dd78af0571657dc509c8f07f2792fe3c6a319122a9b4e782",
+      "indexed_at": "2026-10-22T12:01:34+00:00",
+      "relative_path": "images/manar_echo.jpeg",
+      "source_id": "85e7d4d7bf94bbe295bb6eae4c1d1cf6e58f590ba0c0b97255d4e2ef283d8e83",
+      "status": "indexed"
+    },
+    "images/maram_abdelbaky_prescription.jpeg": {
+      "chunk_count": 1,
+      "content_sha256": "f0c9efc3018b7a0eea9b39df676784e1ed62966774283f01c2ef7fdcc6b351f5",
+      "indexed_at": "2026-10-22T12:01:35+00:00",
+      "relative_path": "images/maram_abdelbaky_prescription.jpeg",
+      "source_id": "e572b71bbcdf33b2dacf5871599257901965a6992be2ebe5df1d6693a4bfa6ab",
+      "status": "indexed"
+    },
+    "images/medical-image.jpg": {
+      "chunk_count": 1,
+      "content_sha256": "2547390ae98c95cc6e5581e9f61677639e5cd59ec773c8e454d51aafe78f621b",
+      "indexed_at": "2026-10-22T12:01:35+00:00",
+      "relative_path": "images/medical-image.jpg",
+      "source_id": "ec83ec245de99c2c6b03102f28e1f1283c629ed76f7a2e2f4d1c28b2c162f98f",
+      "status": "indexed"
+    },
+    "images/test.png": {
+      "chunk_count": 1,
+      "content_sha256": "46b90eb385c2cf7762554184a166ccaac39825a720485de27b13145efe01139f",
+      "indexed_at": "2026-10-22T12:01:35+00:00",
+      "relative_path": "images/test.png",
+      "source_id": "cdfcbcd20b2f4e1fb731e6408d4e1aac56bb02d9b8d38df4399b8686f25138fb",
+      "status": "indexed"
+    }
+  },
+  "version": 1
+}

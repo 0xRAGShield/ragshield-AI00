@@ -1,0 +1,14 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.env
+tests
+rag-grad
+*.slnx
+RAG-GEN/qdrant_backup
+RAG-GEN/tests
+RAG-GEN/models
+data/documents
+data/images
