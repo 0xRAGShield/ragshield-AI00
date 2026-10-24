@@ -1,0 +1,22 @@
+{
+  "dataset_path": "evaluation/datasets/evaluation_template.jsonl",
+  "output_dir": "evaluation/reports/runs",
+  "k_values": [1, 3, 5],
+  "top_k": 5,
+  "top_n": 5,
+  "max_cases": null,
+  "suites": {
+    "retrieval": true,
+    "reranker": true,
+    "generation": true,
+    "hallucination": true,
+    "end_to_end": true
+  },
+  "execute": false,
+  "redact_evidence_text": true,
+  "ingest_on_startup": false,
+  "evaluation_track": "full_pipeline",
+  "optional_llm_judge": false,
+  "frozen_candidate_pool_path": null,
+  "notes": "execute=false is dry-run. Set execute true only after a frozen ragshield_test collection is verified. Do not pass vector_size into QdrantStore (it creates missing collections)."
+}

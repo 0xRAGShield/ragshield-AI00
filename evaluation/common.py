@@ -1,0 +1,361 @@
+"""Shared evaluation helpers. Pipeline imports happen only inside live builders."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import logging
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+REQUIRED_ROW_FIELDS = ("query_id", "query")
+OPTIONAL_ROW_FIELDS = (
+    "language",
+    "split",
+    "task",
+    "answerable",
+    "route_expected",
+    "expected_aliases",
+    "relevant_chunk_ids",
+    "relevant_source_ids",
+    "relevant_document_ids",
+    "relevant_image_source_ids",
+    "expected_evidence_ids",
+    "relevance_judgments",
+    "reference_answer",
+    "key_facts",
+    "claim_annotations",
+    "attack_category",
+    "expected_policy",
+    "notes",
+)
+
+_SECRET_KEY_BITS = ("key", "token", "secret", "password", "credential")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def rag_gen_dir() -> Path:
+    path = repo_root() / "RAG-GEN"
+    if not (path / "RAG_GEN.py").is_file():
+        raise FileNotFoundError(
+            f"RAG-GEN/RAG_GEN.py not found at {path}. "
+            "Evaluation expects the Phase 2 tree root as parent of evaluation/."
+        )
+    return path
+
+
+def ensure_rag_gen_on_path() -> Path:
+    path = rag_gen_dir()
+    text = str(path)
+    if text not in sys.path:
+        sys.path.insert(0, text)
+    return path
+
+
+def load_config(path: str | Path | None = None) -> dict[str, Any]:
+    config_path = Path(path) if path else Path(__file__).resolve().parent / "config.json"
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("config.json must be an object")
+    return data
+
+
+def resolve_path(value: str | Path) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return repo_root() / path
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        obj = json.loads(stripped)
+        if not isinstance(obj, dict):
+            raise ValueError(f"{path}:{line_no} must be a JSON object")
+        validate_row(obj, line_no=line_no, path=path)
+        rows.append(obj)
+    return rows
+
+
+def validate_row(row: dict[str, Any], *, line_no: int, path: Path) -> None:
+    for field in REQUIRED_ROW_FIELDS:
+        value = row.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{path}:{line_no} missing non-empty string field {field}")
+    extra = set(row) - set(REQUIRED_ROW_FIELDS) - set(OPTIONAL_ROW_FIELDS)
+    if extra:
+        raise ValueError(
+            f"{path}:{line_no} unknown fields {sorted(extra)}. "
+            "Extend OPTIONAL_ROW_FIELDS in common.py if you add schema keys."
+        )
+
+
+def limit_rows(rows: list[dict[str, Any]], max_cases: int | None) -> list[dict[str, Any]]:
+    if max_cases is None:
+        return rows
+    if max_cases < 0:
+        raise ValueError("max_cases must be >= 0")
+    return rows[:max_cases]
+
+
+def file_sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def gold_chunk_ids(row: dict[str, Any]) -> list[str] | None:
+    for key in ("relevant_chunk_ids", "expected_evidence_ids"):
+        value = row.get(key)
+        if isinstance(value, list) and value:
+            return [str(item) for item in value]
+    return None
+
+
+def gold_source_ids(row: dict[str, Any]) -> list[str] | None:
+    for key in ("relevant_source_ids", "relevant_document_ids"):
+        value = row.get(key)
+        if isinstance(value, list) and value:
+            return [str(item) for item in value]
+    return None
+
+
+def redact_text(text: str | None, enabled: bool) -> str | None:
+    if text is None:
+        return None
+    if not enabled:
+        return text
+    return f"<redacted len={len(text)} sha256={hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]}>"
+
+
+def redact_mapping(data: dict[str, Any]) -> dict[str, Any]:
+    cleaned: dict[str, Any] = {}
+    for key, value in data.items():
+        lowered = key.lower()
+        if any(bit in lowered for bit in _SECRET_KEY_BITS):
+            cleaned[key] = "<redacted>"
+        else:
+            cleaned[key] = value
+    return cleaned
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def write_markdown(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def configure_logging() -> logging.Logger:
+    logger = logging.getLogger("ragshield.evaluation")
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+        logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
+
+
+def apply_eval_env(config: dict[str, Any]) -> None:
+    """Must run before importing app.core.settings (lru_cache)."""
+    os.environ["INGEST_ON_STARTUP"] = "false"
+    os.environ.setdefault("INGEST_REFRESH_IMAGES", "false")
+    if config.get("ingest_on_startup"):
+        raise RuntimeError(
+            "config ingest_on_startup must be false; evaluation must not ingest."
+        )
+
+
+def parse_runner_args(description: str) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--config",
+        default=str(Path(__file__).resolve().parent / "config.json"),
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Call live retriever/reranker/pipeline. Default is dry-run.",
+    )
+    parser.add_argument("--dataset", default=None)
+    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--max-cases", type=int, default=None)
+    return parser.parse_args()
+
+
+def merge_runtime_flags(config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    merged = dict(config)
+    if args.execute:
+        merged["execute"] = True
+    if args.dataset:
+        merged["dataset_path"] = args.dataset
+    if args.output_dir:
+        merged["output_dir"] = args.output_dir
+    if args.max_cases is not None:
+        merged["max_cases"] = args.max_cases
+    return merged
+
+
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?؟])\s+")
+
+
+def split_claims(answer: str) -> list[str]:
+    text = (answer or "").strip()
+    if not text:
+        return []
+    parts = [part.strip() for part in _SENTENCE_SPLIT.split(text) if part.strip()]
+    return parts or [text]
+
+
+def looks_like_abstention(answer: str) -> bool:
+    lowered = (answer or "").casefold()
+    needles = (
+        "insufficient",
+        "not enough evidence",
+        "cannot determine",
+        "لا يكفي",
+        "غير كاف",
+        "لا يمكن",
+    )
+    return any(needle in lowered for needle in needles)
+
+
+def candidate_payload(candidate: Any, *, redact: bool) -> dict[str, Any]:
+    metadata = dict(getattr(candidate, "metadata", None) or {})
+    return {
+        "chunk_id": getattr(candidate, "chunk_id", None),
+        "source_id": getattr(candidate, "source_id", None),
+        "score": getattr(candidate, "score", None),
+        "rerank_score": getattr(candidate, "rerank_score", None),
+        "original_score": getattr(candidate, "original_score", None),
+        "rank": getattr(candidate, "rank", None),
+        "original_rank": getattr(candidate, "original_rank", None),
+        "file_name": metadata.get("file_name"),
+        "text": redact_text(getattr(candidate, "text", None), redact),
+    }
+
+
+def build_safe_pipeline():
+    """Wire Phase 2 components without QdrantStore vector_size (avoids create_collection).
+
+    Do not call this unless execute=True and the collection already exists.
+    """
+    ensure_rag_gen_on_path()
+    from app.context.context_builder import ContextBuilder
+    from app.core.settings import get_settings
+    from app.embeddings.embedding_model import BGE_M3_Embedding
+    from app.generation.llm.llm import build_llm_runtime
+    from app.generation.prompts.prompt_builder import PromptBuilder
+    from app.pipeline import RAGPipeline
+    from app.retrieval.ranker_model import CrossEncoderRerankerModel
+    from app.retrieval.reranker import Reranker
+    from app.retrieval.retriever import Retriever
+    from app.vector_store.vector_store import QdrantStore
+
+    settings = get_settings()
+    if settings.ingest_on_startup:
+        raise RuntimeError("ingest_on_startup is True; refuse to build pipeline.")
+
+    embedding_model = BGE_M3_Embedding()
+    store = QdrantStore(
+        collection_name=settings.retrieval.collection_name,
+        mode=settings.retrieval.qdrant_mode,
+        host=settings.retrieval.qdrant_host,
+        port=settings.retrieval.qdrant_port,
+        local_path=settings.retrieval.qdrant_local_path,
+        vector_size=None,
+    )
+    if not store.collection_exists():
+        raise RuntimeError(
+            f"Collection {settings.retrieval.collection_name!r} does not exist. "
+            "Evaluation will not create it."
+        )
+
+    pipeline = RAGPipeline(
+        retriever=Retriever(
+            embedding_model=embedding_model,
+            vector_store=store,
+            settings=settings.retrieval,
+        ),
+        reranker=Reranker(
+            model=CrossEncoderRerankerModel(),
+            settings=settings.reranker,
+        ),
+        context_builder=ContextBuilder(settings=settings.context),
+        prompt_builder=PromptBuilder(settings=settings.prompt),
+        llm=build_llm_runtime(settings=settings.llm),
+    )
+    return pipeline, settings
+
+
+def build_retriever_only():
+    ensure_rag_gen_on_path()
+    from app.core.settings import get_settings
+    from app.embeddings.embedding_model import BGE_M3_Embedding
+    from app.retrieval.retriever import Retriever
+    from app.vector_store.vector_store import QdrantStore
+
+    settings = get_settings()
+    if settings.ingest_on_startup:
+        raise RuntimeError("ingest_on_startup is True; refuse to build retriever.")
+    embedding_model = BGE_M3_Embedding()
+    store = QdrantStore(
+        collection_name=settings.retrieval.collection_name,
+        mode=settings.retrieval.qdrant_mode,
+        host=settings.retrieval.qdrant_host,
+        port=settings.retrieval.qdrant_port,
+        local_path=settings.retrieval.qdrant_local_path,
+        vector_size=None,
+    )
+    if not store.collection_exists():
+        raise RuntimeError(
+            f"Collection {settings.retrieval.collection_name!r} does not exist."
+        )
+    retriever = Retriever(
+        embedding_model=embedding_model,
+        vector_store=store,
+        settings=settings.retrieval,
+    )
+    return retriever, settings
+
+
+def build_reranker_only():
+    ensure_rag_gen_on_path()
+    from app.core.settings import get_settings
+    from app.retrieval.ranker_model import CrossEncoderRerankerModel
+    from app.retrieval.reranker import Reranker
+
+    settings = get_settings()
+    reranker = Reranker(
+        model=CrossEncoderRerankerModel(),
+        settings=settings.reranker,
+    )
+    return reranker, settings
