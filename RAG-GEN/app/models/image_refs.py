@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import quote
 
+from app.arabic.normalization import normalize_arabic_orthography
 from app.models.evidence_models import ImageDocument, SourceDocument
 from app.models.rag_models import RetrievedImage
 
@@ -63,6 +64,7 @@ _TYPE_HINTS: dict[str, tuple[str, ...]] = {
         "prescription",
         "medical prescription",
         "روشتة",
+        "روشته",
     ),
     "roshte": ("prescription", "روشتة"),
     "rosheta": ("prescription", "روشتة"),
@@ -84,6 +86,19 @@ _TYPE_HINTS: dict[str, tuple[str, ...]] = {
     "report": ("report", "تقرير"),
 }
 
+def _build_document_alias_groups() -> tuple[tuple[str, ...], ...]:
+    groups: list[tuple[str, ...]] = []
+
+    for key, aliases in _TYPE_HINTS.items():
+        members = (key.replace("-", " "), *aliases)
+        unique = tuple(dict.fromkeys(members))
+        groups.append(unique)
+
+    return tuple(groups)
+
+
+_DOCUMENT_ALIAS_GROUPS = _build_document_alias_groups()
+
 _URL_KEYS = (
     "url",
     "uri",
@@ -97,6 +112,120 @@ _URL_KEYS = (
     "file_path",
     "storage_path",
 )
+
+
+_DOCUMENT_ABSENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"(?:image|prescription|document|scan|x-?ray|"
+        r"روشته|صوره|اشعه)"
+        r".{0,80}(?:not present|not found|is missing|"
+        r"غير موجود|ليست موجود)",
+        re.IGNORECASE | re.DOTALL | re.UNICODE,
+    ),
+    re.compile(
+        r"(?:not present|not found|is missing|"
+        r"غير موجود|ليست موجود).{0,80}"
+        r"(?:image|prescription|document|scan|"
+        r"روشته|صوره|اشعه)",
+        re.IGNORECASE | re.DOTALL | re.UNICODE,
+    ),
+    re.compile(
+        r"(?:no matching (?:image|prescription|document)|"
+        r"no prescription image|"
+        r"لا توجد?\s+روشته|مفيش\s+روشته|"
+        r"لا توجد?\s+صوره)",
+        re.IGNORECASE | re.UNICODE,
+    ),
+)
+
+_IMAGE_ABSENCE_REWRITE = (
+    "A retrieved document image is listed in the images field. "
+    "That listing means the image file was retrieved as evidence; "
+    "its pixel contents have not been extracted, so medication names "
+    "or other OCR details are not available."
+)
+
+
+def reconcile_answer_with_image_evidence(
+    answer: str | None,
+    images: Sequence[RetrievedImage],
+) -> str | None:
+    """
+    Rewrite answers that deny the existence of retrieved image files.
+
+    Does not invent a patient identity, OCR text, or clinical details.
+    Leaves uncertainty about doses, diagnoses, or unreadable contents.
+    """
+
+    if answer is None or not images:
+        return answer
+
+    folded = normalize_arabic_orthography(answer).casefold()
+
+    if not any(pattern.search(folded) for pattern in _DOCUMENT_ABSENCE_PATTERNS):
+        return answer
+
+    return _IMAGE_ABSENCE_REWRITE
+
+
+_GENERATION_FAILED_ANSWER = (
+    "Answer generation failed, but retrieved sources are included. "
+    "Any matching medical images are listed in the images field."
+)
+
+
+def public_query_answer(
+    generation: Any,
+    images: Sequence[RetrievedImage],
+) -> str:
+    if generation is None:
+        return _GENERATION_FAILED_ANSWER
+
+    text = getattr(generation, "text", None)
+
+    if not isinstance(text, str) or not text.strip():
+        return _GENERATION_FAILED_ANSWER
+
+    reconciled = reconcile_answer_with_image_evidence(text, images)
+    return reconciled if reconciled is not None else text
+
+
+def expand_query_with_document_aliases(query: str) -> str:
+    """
+    Append indexed document-type aliases when the query mentions a type.
+
+    Does not hardcode person names. Uses Arabic orthographic folding so
+    variants such as روشتة / روشته can match the same type group.
+    """
+
+    text = (query or "").strip()
+
+    if not text:
+        return text
+
+    folded_query = normalize_arabic_orthography(text).casefold()
+    extras: list[str] = []
+    seen: set[str] = set()
+
+    for group in _DOCUMENT_ALIAS_GROUPS:
+        if not any(
+            _alias_mentioned(alias, folded_query) for alias in group
+        ):
+            continue
+
+        for alias in group:
+            key = alias.casefold()
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            extras.append(alias)
+
+    if not extras:
+        return text
+
+    return f"{text} {' '.join(extras)}"
 
 
 def source_document_from_image(
@@ -284,6 +413,7 @@ def to_public_image_urls(
     """Rewrite local corpus paths to API media URLs. Keep HTTP(S) refs."""
 
     rewritten: list[RetrievedImage] = []
+    seen_public: set[str] = set()
 
     for image in images:
         media_url = to_public_image_url(
@@ -306,6 +436,12 @@ def to_public_image_urls(
             )
             clickable = absolute or relative
 
+        dedupe_key = clickable.casefold()
+
+        if dedupe_key in seen_public:
+            continue
+
+        seen_public.add(dedupe_key)
         rewritten.append(
             image.model_copy(
                 update={
@@ -593,6 +729,16 @@ def _search_aliases(
                     f"{arabic} {first}",
                 ]
             )
+
+            folded = normalize_arabic_orthography(arabic)
+
+            if folded != arabic:
+                candidates.extend(
+                    [
+                        f"{folded} {full}",
+                        f"{folded} {first}",
+                    ]
+                )
 
     for candidate in candidates:
         key = candidate.casefold()
@@ -916,6 +1062,19 @@ def _is_image_media_type(media_type: str | None) -> bool:
         return False
 
     return media_type.casefold().startswith("image/")
+
+
+def _alias_mentioned(alias: str, folded_query: str) -> bool:
+    needle = normalize_arabic_orthography(alias).casefold().strip()
+
+    if not needle:
+        return False
+
+    pattern = re.compile(
+        r"(?<!\w)" + re.escape(needle) + r"(?!\w)",
+        re.UNICODE,
+    )
+    return pattern.search(folded_query) is not None
 
 
 def _optional_str(value: Any) -> str | None:

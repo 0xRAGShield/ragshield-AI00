@@ -277,6 +277,19 @@ def _dedupe_key(
 # Provenance
 # ============================================================================
 
+def _resolve_source_label(
+    candidate: RerankedCandidate,
+    source_id: str,
+) -> str:
+    for key in ("source", "source_title", "file_name"):
+        value = candidate.metadata.get(key)
+
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return source_id
+
+
 def _resolve_section(
     candidate: RerankedCandidate,
 ) -> str | None:
@@ -349,7 +362,7 @@ def _build_evidence_block(
             source_id=source_id,
         ),
         provenance=EvidenceProvenance(
-            source=source_id,
+            source=_resolve_source_label(candidate, source_id),
             section=_resolve_section(candidate),
             page=_resolve_page(candidate),
             source_id=source_id,

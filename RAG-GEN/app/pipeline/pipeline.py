@@ -22,6 +22,7 @@ from app.generation.prompts.prompt_builder import (
 from app.core.settings import get_settings
 from app.models.image_refs import (
     collect_retrieved_images,
+    reconcile_answer_with_image_evidence,
     to_public_image_urls,
 )
 from app.models.rag_models import (
@@ -309,6 +310,17 @@ class RAGPipeline:
                 cause=exc,
             ) from exc
 
+        settings = get_settings()
+        images = tuple(
+            to_public_image_urls(
+                collect_retrieved_images(
+                    reranking.candidates
+                ),
+                settings.data_dir,
+                public_base_url=settings.public_base_url,
+            )
+        )
+
         # ============================================================
         # PROMPT
         # ============================================================
@@ -325,6 +337,7 @@ class RAGPipeline:
                 query,
                 context,
                 request=prompt_request,
+                images=images,
             )
 
             prompt_latency_ms = (
@@ -468,17 +481,6 @@ class RAGPipeline:
         # ============================================================
         # RESULT
         # ============================================================
-
-        settings = get_settings()
-        images = tuple(
-            to_public_image_urls(
-                collect_retrieved_images(
-                    reranking.candidates
-                ),
-                settings.data_dir,
-                public_base_url=settings.public_base_url,
-            )
-        )
 
         return RAGPipelineResult(
             trace_id=trace_id,

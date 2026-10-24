@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from app.core.settings import RetrievalSettings
 from app.embeddings.embedding_model import BGE_M3_Embedding
+from app.models.image_refs import expand_query_with_document_aliases
 from app.models.rag_models import (
     RetrievalCandidate,
     RetrievalMetrics,
@@ -232,7 +233,7 @@ class Retriever:
         try:
             vector = await self._run_with_timeout(
                 self._embed_query,
-                query.text,
+                expand_query_with_document_aliases(query.text),
                 timeout=self._settings.embedding_timeout_seconds,
             )
 

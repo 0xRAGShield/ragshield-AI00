@@ -15,6 +15,7 @@ from app.generation.llm.llm import build_llm_runtime
 from app.generation.prompts.prompt_builder import PromptBuilder
 from app.api.media import build_media_router
 from app.ingestion.startup import run_startup_ingestion
+from app.models.image_refs import public_query_answer
 from app.models.rag_models import RetrievedImage
 from app.pipeline import RAGPipeline
 from app.retrieval.ranker_model import CrossEncoderRerankerModel
@@ -204,13 +205,9 @@ async def query(request: QueryRequest) -> QueryResponse:
         ) from exc
 
     generation_failed = result.generation is None
-    answer = (
-        result.generation.text
-        if result.generation is not None
-        else (
-            "Answer generation failed, but retrieved sources are included. "
-            "Any matching medical images are listed in the images field."
-        )
+    answer = public_query_answer(
+        result.generation,
+        result.images,
     )
 
     return QueryResponse(

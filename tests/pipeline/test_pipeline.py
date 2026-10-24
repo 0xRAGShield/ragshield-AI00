@@ -99,6 +99,7 @@ class FakePromptBuilder:
         context,
         *,
         request=None,
+        images=None,
     ):
         return LLMPrompt(
             messages=[
@@ -174,3 +175,5 @@ async def test_full_base_rag_pipeline():
     )
 
     assert result.trace_id
+    assert result.images == ()
+    assert result.is_degraded in {True, False}

@@ -11,6 +11,7 @@ from contextvars import ContextVar
 from typing import Any, Protocol, Sequence
 
 from app.core.settings import RerankerSettings
+from app.models.image_refs import expand_query_with_document_aliases
 from app.models.rag_models import (
     RerankedCandidate,
     RerankedResult,
@@ -223,7 +224,9 @@ class Reranker:
 
             try:
                 reranked_candidates = await self._score_candidates(
-                    query=retrieval_result.query.text,
+                    query=expand_query_with_document_aliases(
+                        retrieval_result.query.text
+                    ),
                     candidates=candidates,
                     metrics=metrics,
                 )
