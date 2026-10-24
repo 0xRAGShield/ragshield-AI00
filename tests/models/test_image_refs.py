@@ -1,8 +1,11 @@
 from app.models.image_refs import (
     collect_retrieved_images,
+    convert_retrieved_images,
     expand_query_with_document_aliases,
+    explain_public_image_url,
     public_query_answer,
     reconcile_answer_with_image_evidence,
+    summarize_candidate_image_fields,
     to_public_image_urls,
 )
 from app.models.rag_models import RetrievedImage, RetrievalCandidate
@@ -75,6 +78,23 @@ def test_query_expansion_overlaps_existing_indexed_type_aliases():
     assert "prescription" in expanded.casefold()
     assert "prescription" in indexed.casefold()
     assert "روشتة" in expanded or "روشتة" in indexed
+
+
+def test_name_variants_are_not_equalized_by_query_expansion():
+    arabic = expand_query_with_document_aliases("هات روشته منار عبدالباقي")
+    latin = expand_query_with_document_aliases("Show me Manar Abdelbaky prescription")
+    short = expand_query_with_document_aliases("روشتة منار")
+    doctor = expand_query_with_document_aliases("عايزه روشتة الدكتور الخطيب")
+
+    for expanded in (arabic, latin, short):
+        assert "prescription" in expanded.casefold()
+
+    assert "منار" in arabic
+    assert "Manar" in latin
+    assert arabic != latin
+    assert "الخطيب" in doctor
+    assert "Azza" not in doctor
+    assert "Manar" not in doctor
 
 
 def test_expand_query_does_not_alter_unrelated_text():
@@ -166,6 +186,71 @@ def test_malformed_image_metadata_does_not_raise():
 
     images = collect_retrieved_images(candidates)
     assert images == []
+
+
+def test_candidate_summaries_omit_chunk_text():
+    summaries = summarize_candidate_image_fields(
+        [
+            _image_candidate(
+                chunk_id="chunk-1",
+                url="images/manar_abdelbaky_prescription.jpeg",
+            )
+        ]
+    )
+    assert summaries[0]["chunk_id"] == "chunk-1"
+    assert summaries[0]["file_name"] == "azza_prescription.jpeg"
+    assert "images" in summaries[0]["image_metadata_keys"]
+    assert summaries[0]["has_image_reference"] is True
+    assert "text" not in summaries[0]
+    assert "Prescription image" not in str(summaries)
+
+
+def test_explain_public_image_url_reasons():
+    assert explain_public_image_url(
+        "images/manar_abdelbaky_prescription.jpeg",
+        "data",
+    )[1] == "converted"
+    assert explain_public_image_url("../../secret.jpeg", "data")[1] == (
+        "parent_traversal"
+    )
+    assert explain_public_image_url("C:/Windows/foo.jpeg", "data")[1] == (
+        "absolute_outside_data_dir"
+    )
+
+
+def test_convert_reports_rejected_paths_without_raw_filesystem_url():
+    collected = collect_retrieved_images(
+        [
+            _image_candidate(
+                chunk_id="chunk-1",
+                url="../../secret.jpeg",
+            )
+        ]
+    )
+    public, rejected = convert_retrieved_images(collected, data_dir="data")
+    assert public == []
+    assert rejected[0]["reason"] == "parent_traversal"
+    assert ".." not in rejected[0]["reason"] or rejected[0]["reason"] == (
+        "parent_traversal"
+    )
+
+
+def test_unresolvable_paths_are_not_converted_to_media_urls():
+    images = collect_retrieved_images(
+        [
+            _image_candidate(
+                chunk_id="chunk-1",
+                url="../../secret.jpeg",
+            ),
+            _image_candidate(
+                chunk_id="chunk-2",
+                url="C:/Windows/foo.jpeg",
+                source_id="source-abs",
+            ),
+        ]
+    )
+    public = to_public_image_urls(images, data_dir="data")
+    assert public == []
 
 
 def test_public_urls_dedupe_path_aliases_of_the_same_file():

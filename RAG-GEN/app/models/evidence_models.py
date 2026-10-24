@@ -3,7 +3,36 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class OntologySystem(str):
+    """
+    Coding-system identifier for catalog entries used by ArabicNormalizer.
+
+    Preserves ``OntologySystem(value).value`` as used in normalization.py.
+    """
+
+    @property
+    def value(self) -> str:
+        return str(self)
+
+
+class OntologyCode(BaseModel):
+    """A single ontology code attached to a catalog surface."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    system: OntologySystem
+    code: str
+    display: str = ""
+
+    @field_validator("system", mode="before")
+    @classmethod
+    def coerce_system(cls, value: Any) -> OntologySystem:
+        if isinstance(value, OntologySystem):
+            return value
+        return OntologySystem(str(value))
 
 
 class SourceDocument(BaseModel):

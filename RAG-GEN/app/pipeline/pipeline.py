@@ -22,8 +22,10 @@ from app.generation.prompts.prompt_builder import (
 from app.core.settings import get_settings
 from app.models.image_refs import (
     collect_retrieved_images,
-    reconcile_answer_with_image_evidence,
-    to_public_image_urls,
+    convert_retrieved_images,
+    expand_query_with_document_aliases,
+    log_image_retrieval_diagnostics,
+    summarize_candidate_image_fields,
 )
 from app.models.rag_models import (
     AssembledContext,
@@ -311,15 +313,31 @@ class RAGPipeline:
             ) from exc
 
         settings = get_settings()
-        images = tuple(
-            to_public_image_urls(
-                collect_retrieved_images(
-                    reranking.candidates
-                ),
-                settings.data_dir,
-                public_base_url=settings.public_base_url,
-            )
+        collected_images = collect_retrieved_images(
+            reranking.candidates
         )
+        public_images, rejected_images = convert_retrieved_images(
+            collected_images,
+            settings.data_dir,
+            public_base_url=settings.public_base_url,
+        )
+        log_image_retrieval_diagnostics(
+            query=query,
+            trace_id=trace_id,
+            retrieved_summaries=summarize_candidate_image_fields(
+                retrieval.candidates
+            ),
+            reranked_summaries=summarize_candidate_image_fields(
+                reranking.candidates
+            ),
+            collected_count=len(collected_images),
+            public_count=len(public_images),
+            rejected=rejected_images,
+            expanded_query_has_type_aliases=(
+                expand_query_with_document_aliases(query) != query
+            ),
+        )
+        images = tuple(public_images)
 
         # ============================================================
         # PROMPT

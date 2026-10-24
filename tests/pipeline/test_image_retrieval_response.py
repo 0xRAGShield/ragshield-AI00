@@ -65,6 +65,37 @@ class ImageRetriever:
         pass
 
 
+class TextOnlyReranker:
+    async def rerank(self, retrieval_result, *, top_n=None):
+        text_candidates = [
+            item
+            for item in retrieval_result.candidates
+            if (item.metadata or {}).get("file_type") != "image"
+        ]
+        kept = text_candidates[: top_n or len(text_candidates)]
+        candidates = [
+            RerankedCandidate(
+                chunk_id=item.chunk_id,
+                source_id=item.source_id,
+                text=item.text,
+                original_score=item.score,
+                rerank_score=item.score,
+                original_rank=index,
+                rank=index,
+                metadata=dict(item.metadata or {}),
+            )
+            for index, item in enumerate(kept)
+        ]
+        return RerankedResult(
+            query=retrieval_result.query.text,
+            candidates=candidates,
+            trace_id="trace-img",
+        )
+
+    def close(self):
+        pass
+
+
 class PassThroughReranker:
     async def rerank(self, retrieval_result, *, top_n=None):
         candidates = [
@@ -174,12 +205,19 @@ def _image_candidate(*, chunk_id: str = "chunk-1") -> RetrievalCandidate:
     )
 
 
-async def _run_pipeline(*, retriever, llm=None, prompt_builder=None, context_builder=None):
+async def _run_pipeline(
+    *,
+    retriever,
+    llm=None,
+    prompt_builder=None,
+    context_builder=None,
+    reranker=None,
+):
     prompt_builder = prompt_builder or RecordingPromptBuilder()
     context_builder = context_builder or RecordingContextBuilder()
     pipeline = RAGPipeline(
         retriever=retriever,
-        reranker=PassThroughReranker(),
+        reranker=reranker or PassThroughReranker(),
         context_builder=context_builder,
         prompt_builder=prompt_builder,
         llm=llm or OkLLM(),
@@ -241,6 +279,105 @@ async def test_image_metadata_survives_context_and_response():
 
 
 @pytest.mark.asyncio
+async def test_retrieved_image_is_not_returned_when_not_reranked():
+    retriever = ImageRetriever(
+        [
+            RetrievalCandidate(
+                chunk_id="chunk-text",
+                source_id="source-text",
+                text="Clinic note from 2023.",
+                score=0.93,
+                metadata={"file_name": "note.txt", "file_type": "text"},
+            ),
+            _image_candidate(chunk_id="chunk-image"),
+        ]
+    )
+    result, prompt_builder, _ = await _run_pipeline(
+        retriever=retriever,
+        reranker=TextOnlyReranker(),
+    )
+
+    assert [item.chunk_id for item in result.reranking.candidates] == [
+        "chunk-text"
+    ]
+    assert result.images == ()
+    assert prompt_builder.images == []
+
+
+class KeepNamedImageReranker:
+    def __init__(self, source_id: str) -> None:
+        self._source_id = source_id
+
+    async def rerank(self, retrieval_result, *, top_n=None):
+        kept = [
+            item
+            for item in retrieval_result.candidates
+            if item.source_id == self._source_id
+        ]
+        candidates = [
+            RerankedCandidate(
+                chunk_id=item.chunk_id,
+                source_id=item.source_id,
+                text=item.text,
+                original_score=item.score,
+                rerank_score=item.score,
+                original_rank=index,
+                rank=index,
+                metadata=dict(item.metadata or {}),
+            )
+            for index, item in enumerate(kept)
+        ]
+        return RerankedResult(
+            query=retrieval_result.query.text,
+            candidates=candidates,
+            trace_id="trace-img",
+        )
+
+    def close(self):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_unrelated_retrieved_images_are_not_returned_with_reranked_evidence():
+    manar = RetrievalCandidate(
+        chunk_id="chunk-manar",
+        source_id="source-manar",
+        text="Prescription image labeled Manar Abdelbaky (from filename).",
+        score=0.8,
+        metadata={
+            "file_name": "manar_abdelbaky_prescription.jpeg",
+            "file_type": "image",
+            "image_url": "images/manar_abdelbaky_prescription.jpeg",
+            "image_path": "images/manar_abdelbaky_prescription.jpeg",
+            "images": [
+                {
+                    "url": "images/manar_abdelbaky_prescription.jpeg",
+                    "source": "manar_abdelbaky_prescription.jpeg",
+                }
+            ],
+        },
+    )
+    azza = RetrievalCandidate(
+        chunk_id="chunk-azza",
+        source_id="source-azza",
+        text="Prescription image labeled Azza (from filename).",
+        score=0.79,
+        metadata=_image_metadata(),
+    )
+    retriever = ImageRetriever([manar, azza])
+    result, _, _ = await _run_pipeline(
+        retriever=retriever,
+        reranker=KeepNamedImageReranker("source-manar"),
+    )
+
+    assert len(result.retrieval.candidates) == 2
+    assert [image.source for image in result.images] == [
+        "manar_abdelbaky_prescription.jpeg"
+    ]
+    assert all("azza" not in (image.url or "").casefold() for image in result.images)
+
+
+@pytest.mark.asyncio
 async def test_duplicate_chunks_yield_one_image():
     retriever = ImageRetriever(
         [
@@ -273,6 +410,45 @@ async def test_malformed_metadata_does_not_crash_pipeline():
     assert result.generation.text == (
         "The evidence discusses metformin dosing."
     )
+
+
+@pytest.mark.asyncio
+async def test_unresolvable_image_paths_are_excluded():
+    retriever = ImageRetriever(
+        [
+            RetrievalCandidate(
+                chunk_id="chunk-escape",
+                source_id="source-escape",
+                text="Prescription image labeled from filename.",
+                score=0.9,
+                metadata={
+                    "file_type": "image",
+                    "image_url": "../../secret.jpeg",
+                    "image_path": "../../secret.jpeg",
+                    "images": [{"url": "../../secret.jpeg"}],
+                },
+            )
+        ]
+    )
+    result, _, _ = await _run_pipeline(retriever=retriever)
+    assert result.images == ()
+
+
+@pytest.mark.asyncio
+async def test_candidates_without_image_metadata_do_not_invent_urls():
+    retriever = ImageRetriever(
+        [
+            RetrievalCandidate(
+                chunk_id="chunk-text",
+                source_id="source-text",
+                text="Notes about a prescription in 2023.",
+                score=0.9,
+                metadata={"file_name": "notes.txt", "file_type": "text"},
+            )
+        ]
+    )
+    result, _, _ = await _run_pipeline(retriever=retriever)
+    assert result.images == ()
 
 
 @pytest.mark.asyncio

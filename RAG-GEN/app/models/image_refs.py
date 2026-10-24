@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -8,6 +9,8 @@ from urllib.parse import quote
 from app.arabic.normalization import normalize_arabic_orthography
 from app.models.evidence_models import ImageDocument, SourceDocument
 from app.models.rag_models import RetrievedImage
+
+logger = logging.getLogger("ragshield.images")
 
 
 MEDIA_ROUTE_PREFIX = "/media"
@@ -69,6 +72,8 @@ _TYPE_HINTS: dict[str, tuple[str, ...]] = {
     "roshte": ("prescription", "روشتة"),
     "rosheta": ("prescription", "روشتة"),
     "roshita": ("prescription", "روشتة"),
+    "echo":("echo", "ايكو"),
+    "echo":("echo", "اكو"),
     "rx": ("prescription", "روشتة"),
     "xray": ("x-ray", "X-ray", "أشعة"),
     "x-ray": ("x-ray", "أشعة"),
@@ -98,6 +103,17 @@ def _build_document_alias_groups() -> tuple[tuple[str, ...], ...]:
 
 
 _DOCUMENT_ALIAS_GROUPS = _build_document_alias_groups()
+
+_IMAGE_METADATA_KEYS = (
+    *_IMAGE_SCALAR_KEYS,
+    *_IMAGE_LIST_KEYS,
+    "file_type",
+    "media_type",
+    "file_name",
+    "relative_path",
+    "image_description",
+    "description",
+)
 
 _URL_KEYS = (
     "url",
@@ -150,13 +166,7 @@ def reconcile_answer_with_image_evidence(
     answer: str | None,
     images: Sequence[RetrievedImage],
 ) -> str | None:
-    """
-    Rewrite answers that deny the existence of retrieved image files.
-
-    Does not invent a patient identity, OCR text, or clinical details.
-    Leaves uncertainty about doses, diagnoses, or unreadable contents.
-    """
-
+   
     if answer is None or not images:
         return answer
 
@@ -191,13 +201,7 @@ def public_query_answer(
 
 
 def expand_query_with_document_aliases(query: str) -> str:
-    """
-    Append indexed document-type aliases when the query mentions a type.
-
-    Does not hardcode person names. Uses Arabic orthographic folding so
-    variants such as روشتة / روشته can match the same type group.
-    """
-
+   
     text = (query or "").strip()
 
     if not text:
@@ -232,12 +236,7 @@ def source_document_from_image(
     image: ImageDocument,
     data_dir: str | Path | None = None,
 ) -> SourceDocument:
-    """
-    Index an image using filename and path provenance only.
-
-    This does not OCR, caption, or interpret pixels.
-    """
-
+   
     if not isinstance(image, ImageDocument):
         raise TypeError("image must be an ImageDocument.")
 
@@ -330,7 +329,6 @@ def preserve_image_metadata(
     title: str | None = None,
     media_type: str | None = None,
 ) -> dict[str, Any]:
-    """Copy metadata and normalize any existing image references."""
 
     preserved = dict(metadata or {})
     images = collect_image_dicts(
@@ -349,11 +347,6 @@ def preserve_image_metadata(
 def collect_retrieved_images(
     records: Sequence[Mapping[str, Any] | Any],
 ) -> list[RetrievedImage]:
-    """
-    Collect original image references from retrieved records.
-
-    Only references present on retrieved evidence are returned.
-    """
 
     collected: list[RetrievedImage] = []
     seen: set[str] = set()
@@ -405,23 +398,70 @@ def collect_retrieved_images(
     return collected
 
 
-def to_public_image_urls(
+def summarize_candidate_image_fields(
+    records: Sequence[Mapping[str, Any] | Any],
+) -> list[dict[str, Any]]:
+    """Safe per-candidate image diagnostics. No chunk text or OCR."""
+
+    summaries: list[dict[str, Any]] = []
+
+    for rank, record in enumerate(records, start=1):
+        source_id, chunk_id, metadata = _record_fields(record)
+        summaries.append(
+            {
+                "rank": rank,
+                "score": _safe_score(record),
+                "source_id": source_id,
+                "chunk_id": chunk_id,
+                "file_name": _optional_str(
+                    metadata.get("file_name")
+                    or metadata.get("source_title")
+                ),
+                "image_metadata_keys": [
+                    key
+                    for key in _IMAGE_METADATA_KEYS
+                    if key in metadata and metadata.get(key) not in (None, "", [])
+                ],
+                "has_image_reference": bool(
+                    collect_image_dicts(
+                        metadata,
+                        source_id=source_id or "unknown",
+                    )
+                )
+                if metadata
+                else False,
+            }
+        )
+
+    return summaries
+
+
+def convert_retrieved_images(
     images: Sequence[RetrievedImage],
     data_dir: str | Path | None,
     public_base_url: str | None = None,
-) -> list[RetrievedImage]:
-    """Rewrite local corpus paths to API media URLs. Keep HTTP(S) refs."""
+) -> tuple[list[RetrievedImage], list[dict[str, str]]]:
+    """Rewrite URLs and report safe rejection reasons (no raw FS paths)."""
 
     rewritten: list[RetrievedImage] = []
+    rejected: list[dict[str, str]] = []
     seen_public: set[str] = set()
 
     for image in images:
-        media_url = to_public_image_url(
+        media_url, reason = explain_public_image_url(
             image.url,
             data_dir,
         )
 
         if not media_url:
+            rejected.append(
+                {
+                    "source_id": image.source_id,
+                    "chunk_id": image.chunk_id or "",
+                    "source": image.source or "",
+                    "reason": reason,
+                }
+            )
             continue
 
         if _is_http_url(media_url):
@@ -439,6 +479,14 @@ def to_public_image_urls(
         dedupe_key = clickable.casefold()
 
         if dedupe_key in seen_public:
+            rejected.append(
+                {
+                    "source_id": image.source_id,
+                    "chunk_id": image.chunk_id or "",
+                    "source": image.source or "",
+                    "reason": "duplicate_public_url",
+                }
+            )
             continue
 
         seen_public.add(dedupe_key)
@@ -452,6 +500,81 @@ def to_public_image_urls(
             )
         )
 
+    return rewritten, rejected
+
+
+def explain_public_image_url(
+    reference: str,
+    data_dir: str | Path | None,
+) -> tuple[str, str]:
+    text = (reference or "").strip()
+
+    if not text:
+        return "", "empty_reference"
+
+    if _is_http_url(text):
+        return text, "http_url"
+
+    if text.startswith(f"{MEDIA_ROUTE_PREFIX}/") or text == MEDIA_ROUTE_PREFIX:
+        return text.split("?", 1)[0], "media_route"
+
+    replaced = text.replace("\\", "/")
+
+    if ".." in Path(replaced).parts:
+        return "", "parent_traversal"
+
+    relative = _relative_to_data_dir(text, data_dir)
+
+    if relative is None:
+        if _looks_absolute(replaced):
+            return "", "absolute_outside_data_dir"
+        return "", "unresolvable_path"
+
+    encoded = quote(relative.as_posix(), safe="/")
+    return f"{MEDIA_ROUTE_PREFIX}/{encoded}", "converted"
+
+
+def log_image_retrieval_diagnostics(
+    *,
+    query: str,
+    trace_id: str,
+    retrieved_summaries: Sequence[Mapping[str, Any]],
+    reranked_summaries: Sequence[Mapping[str, Any]],
+    collected_count: int,
+    public_count: int,
+    rejected: Sequence[Mapping[str, str]],
+    expanded_query_has_type_aliases: bool,
+) -> None:
+    logger.info(
+        "%s",
+        {
+            "event": "image_retrieval_diagnostics",
+            "trace_id": trace_id,
+            "query": query,
+            "expanded_query_has_type_aliases": (
+                expanded_query_has_type_aliases
+            ),
+            "retrieved_candidates": list(retrieved_summaries),
+            "reranked_candidates": list(reranked_summaries),
+            "collected_before_url_conversion": collected_count,
+            "public_after_url_conversion": public_count,
+            "rejected_url_conversions": list(rejected),
+        },
+    )
+
+
+def to_public_image_urls(
+    images: Sequence[RetrievedImage],
+    data_dir: str | Path | None,
+    public_base_url: str | None = None,
+) -> list[RetrievedImage]:
+    """Rewrite local corpus paths to API media URLs. Keep HTTP(S) refs."""
+
+    rewritten, _rejected = convert_retrieved_images(
+        images,
+        data_dir,
+        public_base_url,
+    )
     return rewritten
 
 
@@ -459,24 +582,8 @@ def to_public_image_url(
     reference: str,
     data_dir: str | Path | None,
 ) -> str:
-    text = (reference or "").strip()
-
-    if not text:
-        return ""
-
-    if _is_http_url(text):
-        return text
-
-    if text.startswith(f"{MEDIA_ROUTE_PREFIX}/") or text == MEDIA_ROUTE_PREFIX:
-        return text.split("?", 1)[0]
-
-    relative = _relative_to_data_dir(text, data_dir)
-
-    if relative is None:
-        return ""
-
-    encoded = quote(relative.as_posix(), safe="/")
-    return f"{MEDIA_ROUTE_PREFIX}/{encoded}"
+    media_url, _reason = explain_public_image_url(reference, data_dir)
+    return media_url
 
 
 def _join_public_base_url(
@@ -500,12 +607,7 @@ def media_file_from_data_dir(
     file_path: str,
     data_dir: str | Path,
 ) -> Path:
-    """
-    Resolve a media request to a file under data_dir.
-
-    Rejects absolute paths, parent traversal, and missing files.
-    """
-
+   
     relative = _relative_to_data_dir(file_path, data_dir)
 
     if relative is None or not relative.parts:
@@ -583,12 +685,7 @@ def build_image_description(
     metadata: Mapping[str, Any] | None = None,
     data_dir: str | Path | None = None,
 ) -> str:
-    """
-    Build a searchable description from filename, path, and explicit metadata.
-
-    Does not inspect pixels or invent a clinical identity.
-    """
-
+   
     meta = dict(metadata or {})
     explicit = _first_non_empty_str(
         meta.get("image_description"),
@@ -1075,6 +1172,27 @@ def _alias_mentioned(alias: str, folded_query: str) -> bool:
         re.UNICODE,
     )
     return pattern.search(folded_query) is not None
+
+
+def _safe_score(record: Mapping[str, Any] | Any) -> float | None:
+    if isinstance(record, Mapping):
+        raw = record.get("score", record.get("rerank_score"))
+    else:
+        raw = getattr(record, "rerank_score", None)
+        if raw is None:
+            raw = getattr(record, "score", None)
+            if raw is None:
+                raw = getattr(record, "original_score", None)
+
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+
+    if not (value == value) or value in {float("inf"), float("-inf")}:
+        return None
+
+    return value
 
 
 def _optional_str(value: Any) -> str | None:
