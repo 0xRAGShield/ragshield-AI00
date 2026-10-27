@@ -1,0 +1,57 @@
+Python environments
+
+.venv/
+venv/
+env/
+
+Python cache
+
+pycache/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+Secrets and environment variables
+
+.env
+.env.*
+!.env.example
+dataset/
+Generated outputs and evaluation results
+
+outputs/
+runs/
+checkpoints/
+*.log
+
+Model weights and Hugging Face cache
+
+models/
+model/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.gguf
+.huggingface/
+.cache/
+
+Jupyter checkpoints
+
+.ipynb_checkpoints/
+
+IDE and operating system files
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+Temporary archives
+
+*.zip
+*.7z
+*.rar
+

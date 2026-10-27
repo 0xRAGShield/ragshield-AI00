@@ -1,0 +1,8 @@
+# CPU build. Do not install the default CUDA wheel.
+# Install with:
+#   pip install -r requirements-local.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+torch
+torchvision
+transformers>=4.57.1
+accelerate
+huggingface_hub

@@ -1,0 +1,5 @@
+numpy>=2.0
+pillow>=10.4
+opencv-python-headless>=4.10
+arabic-reshaper>=3.0.0
+python-bidi>=0.6.0
