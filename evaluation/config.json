@@ -14,6 +14,7 @@
   },
   "execute": false,
   "redact_evidence_text": true,
+  "redact_answer_text": true,
   "ingest_on_startup": false,
   "evaluation_track": "full_pipeline",
   "optional_llm_judge": false,

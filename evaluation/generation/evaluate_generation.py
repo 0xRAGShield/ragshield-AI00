@@ -51,7 +51,7 @@ def _citation_overlap(answer: str | None, evidence_ids: list[str]) -> dict:
 
 async def _run_live(config: dict, rows: list[dict], logger) -> list[dict]:
     pipeline, settings = build_safe_pipeline()
-    redact = bool(config.get("redact_evidence_text", True))
+    redact = bool(config.get("redact_answer_text", True))
     results: list[dict] = []
     try:
         await pipeline.startup()
@@ -110,6 +110,17 @@ async def _run_live(config: dict, rows: list[dict], logger) -> list[dict]:
                         ),
                         "human_rating_scale": HUMAN_RATING_SCALE,
                         "evidence_chunk_ids": evidence_ids,
+                        "evidence_text": [
+                            {
+                                    "chunk_id": block.identity.chunk_id,
+                                    "source_id": block.identity.source_id,
+                                    "text": redact_text(
+                                          block.content,
+                                          bool(config.get("redact_evidence_text", True)),
+                                                          ),
+                            }
+                            for block in result.context.evidence
+                         ], 
                         "image_source_ids": [img.source_id for img in result.images],
                         "prompt_safety_mode": result.prompt.safety_mode,
                         "prompt_is_empty_evidence": result.prompt.is_empty_evidence,
