@@ -29,6 +29,7 @@ from common import (
     write_markdown,
 )
 from metrics import hallucination_bundle, mean_ignore_none  # noqa: E402
+from reporting import coverage_from_per_query  # noqa: E402
 
 VALID_LABELS = {
     "supported",
@@ -36,6 +37,21 @@ VALID_LABELS = {
     "contradicted",
     "indeterminate",
 }
+
+
+def _faithfulness_label(item: dict) -> str | None:
+    """Return a scoring label only when the dataset set `label` explicitly.
+
+    `support_level` (direct, needs_verification, …) describes gold-claim
+    evidence, not whether a generated answer hallucinated. Do not map it.
+    """
+    raw = item.get("label")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    label = str(raw).strip().casefold()
+    if label not in VALID_LABELS:
+        return None
+    return label
 
 
 def _normalize_annotations(raw) -> list[dict]:
@@ -46,10 +62,8 @@ def _normalize_annotations(raw) -> list[dict]:
         if not isinstance(item, dict):
             continue
         text = str(item.get("text") or item.get("claim") or "").strip()
-        label = str(item.get("label") or "indeterminate").strip().casefold()
-        if label not in VALID_LABELS:
-            label = "indeterminate"
-        if text:
+        label = _faithfulness_label(item)
+        if text and label is not None:
             out.append({"text": text, "label": label})
     return out
 
@@ -149,7 +163,12 @@ def main() -> int:
     config = merge_runtime_flags(load_config(args.config), args)
     apply_eval_env(config)
     dataset_path = resolve_path(config["dataset_path"])
-    output_dir = resolve_path(config["output_dir"]) / "hallucination"
+    output_dir = resolve_path(config["output_dir"])
+    output_dir = (
+        (output_dir / "dry_run" / "hallucination")
+        if not bool(config.get("execute"))
+        else (output_dir / "hallucination")
+    )
     rows = limit_rows(load_jsonl(dataset_path), config.get("max_cases"))
     execute = bool(config.get("execute"))
 
@@ -173,12 +192,31 @@ def main() -> int:
                 }
             )
 
+    n_human_claims = sum(
+        1
+        for row in per_query
+        if row.get("annotation_source") == "dataset"
+        or row.get("dataset_claim_annotations")
+    )
+    determined = coverage_from_per_query(
+        per_query,
+        "answer_level_hallucination_rate",
+        exclude_reason="no_determined_claims_all_indeterminate_or_unlabelled",
+        nested="metrics",
+    )
+    support = coverage_from_per_query(
+        per_query,
+        "claim_support_rate",
+        exclude_reason="no_claim_metrics",
+        nested="metrics",
+    )
     aggregates = {
         "n_rows": len(per_query),
         "n_errors": sum(1 for row in per_query if row.get("error")),
-        "mean_claim_support_rate": mean_ignore_none(
-            [(row.get("metrics") or {}).get("claim_support_rate") for row in per_query]
-        ),
+        "n_queries_with_human_claim_labels": n_human_claims,
+        "mean_claim_support_rate": support["mean"],
+        "mean_claim_support_rate_n": support["n_eligible"],
+        "mean_claim_support_rate_n_excluded": support["n_excluded"],
         "mean_unsupported_claim_rate": mean_ignore_none(
             [(row.get("metrics") or {}).get("unsupported_claim_rate") for row in per_query]
         ),
@@ -191,11 +229,15 @@ def main() -> int:
                 for row in per_query
             ]
         ),
-        "mean_answer_level_hallucination_rate": mean_ignore_none(
-            [
-                (row.get("metrics") or {}).get("answer_level_hallucination_rate")
-                for row in per_query
-            ]
+        "mean_answer_level_hallucination_rate": determined["mean"],
+        "mean_answer_level_hallucination_rate_n": determined["n_eligible"],
+        "mean_answer_level_hallucination_rate_n_excluded": determined["n_excluded"],
+        "mean_answer_level_hallucination_rate_excluded_query_ids": determined[
+            "excluded_query_ids"
+        ],
+        "limitation": (
+            "Indeterminate-only queries do not prove answers are hallucination-free. "
+            "Fill claim_annotations. Auto-split claims stay indeterminate."
         ),
     }
     meta = {
@@ -209,6 +251,10 @@ def main() -> int:
             "Rates use all claims including indeterminate. "
             "Answer-level hallucination ignores indeterminate claims."
         ),
+        "manual_annotations_override_sentence_split": True,
+        "manual_claims_are_not_aligned_to_generated_answer": True,
+        "annotation_evidence_ids_unused_in_rates": True,
+        "lexical_overlap_heuristic_does_not_set_unsupported": True,
     }
     write_jsonl(output_dir / "per_query.jsonl", per_query)
     write_json(output_dir / "aggregate.json", {"meta": meta, "metrics": aggregates})
@@ -216,7 +262,9 @@ def main() -> int:
         output_dir / "report.md",
         "# Hallucination evaluation report\n\n"
         "Do not treat missing context as contradiction. Fill claim_annotations "
-        "manually: supported, unsupported, contradicted, indeterminate.\n",
+        "manually: supported, unsupported, contradicted, indeterminate. "
+        "Sentence-split unlabeled claims stay indeterminate; that is not proof "
+        "of faithfulness.\n",
     )
     logger.info("Wrote %s", output_dir)
     return 0

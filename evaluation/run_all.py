@@ -34,6 +34,13 @@ def main() -> int:
         extra.extend(["--max-cases", str(args.max_cases)])
 
     failures = []
+    validate_script = Path(__file__).parent / "validate_dataset.py"
+    validate_cmd = [sys.executable, str(validate_script), "--config", args.config]
+    if args.dataset:
+        validate_cmd.extend(["--dataset", args.dataset])
+    logger.info("Validating dataset schema and label coverage")
+    if subprocess.run(validate_cmd, check=False).returncode != 0:
+        failures.append("validate_dataset")
     for name, script in SUITE_SCRIPTS.items():
         if not enabled.get(name, True):
             logger.info("Skipping disabled suite %s", name)

@@ -31,7 +31,13 @@ from common import (
     write_jsonl,
     write_markdown,
 )
-from metrics import mean_ignore_none, ranking_bundle  # noqa: E402
+from metrics import (  # noqa: E402
+    EXCLUSION_UNLABELED_CHUNKS,
+    gold_ranks,
+    mean_ignore_none,
+    ranking_bundle,
+)
+from reporting import coverage_from_per_query  # noqa: E402
 
 
 def _load_frozen_pool(path: Path) -> dict[str, list[dict]]:
@@ -128,6 +134,17 @@ async def _run_live(config: dict, rows: list[dict], logger) -> list[dict]:
                 missing_from_pool = sorted(gold_set.difference(pre_ids)) if gold else []
                 record.update(
                     {
+                        "ineligible_reason": (
+                            None if gold is not None else EXCLUSION_UNLABELED_CHUNKS
+                        ),
+                        "gold_chunk_ids": gold,
+                        "pre_gold_ranks": gold_ranks(pre_ids, gold),
+                        "post_gold_ranks": gold_ranks(post_ids, gold),
+                        "same_candidate_set": set(pre_ids) == set(post_ids),
+                    }
+                )
+                record.update(
+                    {
                         "pool_source": pool_source,
                         "input_count": len(pre_ids),
                         "output_count": len(post_ids),
@@ -185,7 +202,8 @@ def main() -> int:
     config = merge_runtime_flags(load_config(args.config), args)
     apply_eval_env(config)
     dataset_path = resolve_path(config["dataset_path"])
-    output_dir = resolve_path(config["output_dir"]) / "reranker"
+    output_dir = resolve_path(config["output_dir"])
+    output_dir = (output_dir / "dry_run" / "reranker") if not bool(config.get("execute")) else (output_dir / "reranker")
     rows = limit_rows(load_jsonl(dataset_path), config.get("max_cases"))
     k_values = list(config.get("k_values") or [5])
     execute = bool(config.get("execute"))
@@ -199,19 +217,40 @@ def main() -> int:
     def _mean(path_keys: tuple[str, str]) -> dict:
         out = {}
         for k in k_values:
-            for name in ("hit", "recall", "precision", "mrr", "ndcg"):
+            for name in ("hit", "recall", "precision", "mrr", "ndcg", "ndcg_graded"):
                 key = f"{name}@{k}"
-                values = [
-                    (row.get(path_keys[0]) or {}).get(key)
-                    for row in per_query
+                coverage = coverage_from_per_query(
+                    per_query,
+                    key,
+                    exclude_reason=EXCLUSION_UNLABELED_CHUNKS,
+                    nested=path_keys[0],
+                )
+                prefix = path_keys[1]
+                out[f"{prefix}_{key}"] = coverage["mean"]
+                out[f"{prefix}_{key}_n"] = coverage["n_eligible"]
+                out[f"{prefix}_{key}_n_excluded"] = coverage["n_excluded"]
+                out[f"{prefix}_{key}_excluded_query_ids"] = coverage[
+                    "excluded_query_ids"
                 ]
-                out[f"{path_keys[1]}_{key}"] = mean_ignore_none(values)
         return out
 
+    live_rows = [row for row in per_query if row.get("pre_chunk_ids") is not None]
     aggregates = {
         "n_rows": len(per_query),
         "n_errors": sum(1 for row in per_query if row.get("error")),
         "n_fallback": sum(1 for row in per_query if row.get("is_fallback")),
+        "n_same_candidate_set": sum(
+            1 for row in live_rows if row.get("same_candidate_set")
+        ),
+        "n_candidate_set_mismatch": sum(
+            1 for row in live_rows if row.get("same_candidate_set") is False
+        ),
+        "mean_input_count": mean_ignore_none(
+            [row.get("input_count") for row in per_query]
+        ),
+        "mean_output_count": mean_ignore_none(
+            [row.get("output_count") for row in per_query]
+        ),
         **_mean(("pre_metrics", "pre")),
         **_mean(("post_metrics", "post")),
         **_mean(("delta_metrics", "delta")),

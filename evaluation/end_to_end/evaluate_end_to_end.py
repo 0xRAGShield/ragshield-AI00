@@ -15,6 +15,8 @@ from common import (
     build_safe_pipeline,
     configure_logging,
     ensure_rag_gen_on_path,
+    expected_abstention_label,
+    expected_route_label,
     file_sha256,
     gold_chunk_ids,
     limit_rows,
@@ -31,7 +33,8 @@ from common import (
     write_jsonl,
     write_markdown,
 )
-from metrics import hit_at_k, mean_ignore_none  # noqa: E402
+from metrics import hit_at_k, mean_ignore_none, token_overlap  # noqa: E402
+from reporting import coverage_from_per_query  # noqa: E402
 
 
 QUERY_RESPONSE_FIELDS = (
@@ -73,11 +76,12 @@ async def _run_live(config: dict, rows: list[dict], logger) -> list[dict]:
             try:
                 route = classify_query(query_text)
                 record["predicted_route"] = route
-                record["route_expected"] = row.get("route_expected")
+                expected_route = expected_route_label(row)
+                record["route_expected"] = expected_route
                 record["route_correct"] = (
                     None
-                    if row.get("route_expected") not in {"CHAT", "RAG"}
-                    else route == row.get("route_expected")
+                    if expected_route not in {"CHAT", "RAG"}
+                    else route == expected_route
                 )
                 if track == "api_faithful" and route == "CHAT":
                     record.update(
@@ -129,19 +133,20 @@ async def _run_live(config: dict, rows: list[dict], logger) -> list[dict]:
                 }
                 gold = gold_chunk_ids(row)
                 context_ids = [b.identity.chunk_id for b in result.context.evidence]
-                unanswerable = row.get("answerable") is False
+                expect_abstain = expected_abstention_label(row)
                 abstained = looks_like_abstention(answer or "")
                 quality_ok = None
                 if row.get("reference_answer") and answer:
                     quality_ok = None  # human / generation suite; not e2e success
                 expected_degraded = bool(row.get("task") == "expect_degraded")
                 control_ok = _schema_ok(http_equiv) and record.get("error") is None
-                if unanswerable:
+                if expect_abstain is True:
                     answerability_ok = abstained or (gen is None)
-                elif row.get("answerable") is True:
+                elif expect_abstain is False:
                     answerability_ok = bool(answer) and gen is not None
                 else:
                     answerability_ok = None
+                overlap = token_overlap(answer, row.get("reference_answer"))
                 record.update(
                     {
                         "skipped_pipeline": False,
@@ -170,12 +175,18 @@ async def _run_live(config: dict, rows: list[dict], logger) -> list[dict]:
                         ),
                         "gold_in_context": (
                             None
-                            if not gold
-                            else float(any(cid in set(context_ids) for cid in gold))
+                            if gold is None
+                            else float(
+                                True
+                                if gold == []
+                                else any(cid in set(context_ids) for cid in gold)
+                            )
                         ),
                         "answerability_ok": answerability_ok,
                         "expected_degraded": expected_degraded,
                         "e2e_success": bool(control_ok),
+                        "e2e_success_is_not_answer_quality": True,
+                        "token_f1_vs_reference": overlap["token_f1"],
                         "answer_quality_not_used_for_e2e_success": quality_ok,
                         "settings_collection": settings.retrieval.collection_name,
                     }
@@ -200,7 +211,12 @@ def main() -> int:
     config = merge_runtime_flags(load_config(args.config), args)
     apply_eval_env(config)
     dataset_path = resolve_path(config["dataset_path"])
-    output_dir = resolve_path(config["output_dir"]) / "end_to_end"
+    output_dir = resolve_path(config["output_dir"])
+    output_dir = (
+        (output_dir / "dry_run" / "end_to_end")
+        if not bool(config.get("execute"))
+        else (output_dir / "end_to_end")
+    )
     rows = limit_rows(load_jsonl(dataset_path), config.get("max_cases"))
     execute = bool(config.get("execute"))
 
@@ -221,13 +237,23 @@ def main() -> int:
             for row in rows
         ]
 
-    scored = [row for row in per_query if row.get("e2e_success") is not None]
+    e2e_cov = coverage_from_per_query(
+        per_query, "e2e_success", exclude_reason="dry_run_or_missing"
+    )
+    route_cov = coverage_from_per_query(
+        per_query, "route_correct", exclude_reason="unlabeled_no_route_expected"
+    )
+    gold_ctx = coverage_from_per_query(
+        per_query, "gold_in_context", exclude_reason="unlabeled_no_relevant_chunk_ids"
+    )
+    f1_cov = coverage_from_per_query(
+        per_query, "token_f1_vs_reference", exclude_reason="unlabeled_no_reference_answer"
+    )
     aggregates = {
         "n_rows": len(per_query),
         "n_errors": sum(1 for row in per_query if row.get("error")),
-        "e2e_success_rate": mean_ignore_none(
-            [float(row["e2e_success"]) for row in scored]
-        ),
+        "e2e_success_rate": e2e_cov["mean"],
+        "e2e_success_rate_n": e2e_cov["n_eligible"],
         "n_degraded": sum(1 for row in per_query if row.get("is_degraded")),
         "mean_retrieval_latency_ms": mean_ignore_none(
             [row.get("retrieval_latency_ms") for row in per_query]
@@ -238,13 +264,20 @@ def main() -> int:
         "mean_generation_latency_ms": mean_ignore_none(
             [row.get("generation_latency_ms") for row in per_query]
         ),
-        "routing_accuracy": mean_ignore_none(
-            [
-                float(row["route_correct"])
-                for row in per_query
-                if row.get("route_correct") is not None
-            ]
-        ),
+        "routing_accuracy": route_cov["mean"],
+        "routing_accuracy_n": route_cov["n_eligible"],
+        "mean_gold_in_context": gold_ctx["mean"],
+        "mean_gold_in_context_n": gold_ctx["n_eligible"],
+        "mean_token_f1_vs_reference": f1_cov["mean"],
+        "mean_token_f1_vs_reference_n": f1_cov["n_eligible"],
+        "layers": {
+            "execution_success": "e2e_success_rate",
+            "routing": "routing_accuracy",
+            "retrieval_in_context": "mean_gold_in_context",
+            "lexical_answer_overlap": "mean_token_f1_vs_reference",
+            "medical_safety": "human_medical_safety (not auto-scored)",
+            "runtime": "mean_*_latency_ms",
+        },
     }
     meta = {
         "suite": "end_to_end",
@@ -260,8 +293,10 @@ def main() -> int:
     write_markdown(
         output_dir / "report.md",
         "# End-to-end evaluation report\n\n"
-        "e2e_success = pipeline completed with QueryResponse-shaped fields "
-        "(or an expected malformed error). It is **not** answer correctness.\n",
+        "e2e_success = in-process RAGPipeline.run completed with QueryResponse-shaped "
+        "fields (or an expected malformed error). It is **not** answer correctness, "
+        "faithfulness, or medical safety. HTTP POST /query is not exercised here; "
+        "see evaluation/tests/test_api_contract.py (optional live URL).\n",
     )
     logger.info("Wrote %s", output_dir)
     return 0

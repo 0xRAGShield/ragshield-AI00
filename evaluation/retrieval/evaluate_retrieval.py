@@ -30,20 +30,31 @@ from common import (
     write_jsonl,
     write_markdown,
 )
-from metrics import mean_ignore_none, ranking_bundle  # noqa: E402
+from metrics import (  # noqa: E402
+    EXCLUSION_UNLABELED_CHUNKS,
+    gold_ranks,
+    ranking_bundle,
+)
+from reporting import coverage_from_per_query  # noqa: E402
 
 
 def _aggregate(rows: list[dict], k_values: list[int], prefix: str) -> dict:
-    summary = {}
+    summary: dict = {}
+    names = ("hit", "recall", "precision", "mrr", "ndcg", "ndcg_graded")
     for k in k_values:
-        for name in ("hit", "recall", "precision", "mrr", "ndcg"):
+        for name in names:
             key = f"{name}@{k}"
-            summary[f"{prefix}_{key}"] = mean_ignore_none(
-                [row.get("metrics", {}).get(key) for row in rows]
+            coverage = coverage_from_per_query(
+                rows,
+                key,
+                exclude_reason=EXCLUSION_UNLABELED_CHUNKS,
+                nested="metrics",
             )
-            summary[f"{prefix}_{key}_n"] = sum(
-                1 for row in rows if row.get("metrics", {}).get(key) is not None
-            )
+            summary[f"{prefix}_{key}"] = coverage["mean"]
+            summary[f"{prefix}_{key}_n"] = coverage["n_eligible"]
+            summary[f"{prefix}_{key}_n_excluded"] = coverage["n_excluded"]
+            summary[f"{prefix}_{key}_excluded_query_ids"] = coverage["excluded_query_ids"]
+            summary[f"{prefix}_{key}_eligible_query_ids"] = coverage["eligible_query_ids"]
     return summary
 
 
@@ -85,6 +96,17 @@ async def _run_live(config: dict, rows: list[dict], logger) -> list[dict]:
                     source_metrics = ranking_bundle(ranked_sources, gold_sources, k)
                     metrics[f"source_hit@{k}"] = source_metrics[f"hit@{k}"]
                     metrics[f"source_recall@{k}"] = source_metrics[f"recall@{k}"]
+                record.update(
+                    {
+                        "ineligible_reason": (
+                            None
+                            if gold_chunks is not None
+                            else EXCLUSION_UNLABELED_CHUNKS
+                        ),
+                        "gold_chunk_ids": gold_chunks,
+                        "gold_ranks": gold_ranks(ranked_chunks, gold_chunks),
+                    }
+                )
                 record.update(
                     {
                         "trace_id": result.metrics.trace_id,
@@ -154,7 +176,9 @@ def _report(meta: dict, aggregates: dict) -> str:
             "- Recall@k: |top-k ∩ gold| / |gold|.",
             "- Precision@k: |top-k ∩ gold| / k (cutoff k, even if fewer hits returned).",
             "- MRR@k: 1/rank of first gold, else 0; unlabeled excluded from the mean.",
-            "- nDCG@k: requires gold or relevance_judgments; skipped otherwise.",
+            "- ndcg@k: binary nDCG from relevant_chunk_ids (same eligible set as Hit).",
+            "- ndcg_graded@k: graded nDCG from relevance_judgments (may have a larger n).",
+            "- Unlabelled queries are listed as excluded; they are not scored as 0.",
             "",
             "## Limitations",
             "- Dense cosine search only (Retriever forbids hybrid/sparse).",
@@ -171,7 +195,8 @@ def main() -> int:
     apply_eval_env(config)
 
     dataset_path = resolve_path(config["dataset_path"])
-    output_dir = resolve_path(config["output_dir"]) / "retrieval"
+    output_dir = resolve_path(config["output_dir"])
+    output_dir = (output_dir / "dry_run" / "retrieval") if not bool(config.get("execute")) else (output_dir / "retrieval")
     rows = limit_rows(load_jsonl(dataset_path), config.get("max_cases"))
     k_values = list(config.get("k_values") or [5])
     execute = bool(config.get("execute"))

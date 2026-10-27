@@ -1,9 +1,17 @@
-
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+EXCLUSION_UNLABELED_CHUNKS = "unlabeled_no_relevant_chunk_ids"
+EXCLUSION_NO_REFERENCE = "unlabeled_no_reference_answer"
+EXCLUSION_NO_CLAIMS = "unlabeled_no_claim_annotations"
+EXCLUSION_NO_ROUTE = "unlabeled_no_route_expected"
+EXCLUSION_NO_ABSTENTION_LABEL = "unlabeled_no_abstention_expectation"
+EXCLUSION_ERROR = "runner_error"
+EXCLUSION_DRY_RUN = "dry_run_no_live_outputs"
 
 
 def mean_ignore_none(values: Sequence[float | None]) -> float | None:
@@ -11,6 +19,32 @@ def mean_ignore_none(values: Sequence[float | None]) -> float | None:
     if not nums:
         return None
     return sum(nums) / len(nums)
+
+
+def metric_coverage(
+    values: Sequence[float | None],
+    *,
+    exclude_reason: str,
+    query_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    eligible_ids: list[str] = []
+    excluded_ids: list[str] = []
+    nums: list[float] = []
+    ids = list(query_ids) if query_ids is not None else [str(i) for i in range(len(values))]
+    for qid, value in zip(ids, values):
+        if value is None:
+            excluded_ids.append(qid)
+        else:
+            eligible_ids.append(qid)
+            nums.append(float(value))
+    return {
+        "mean": (sum(nums) / len(nums)) if nums else None,
+        "n_eligible": len(nums),
+        "n_excluded": len(excluded_ids),
+        "eligible_query_ids": eligible_ids,
+        "excluded_query_ids": excluded_ids,
+        "excluded_reason": exclude_reason if excluded_ids else None,
+    }
 
 
 def _as_ids(ranked: Sequence[str] | None) -> list[str]:
@@ -22,10 +56,7 @@ def _as_ids(ranked: Sequence[str] | None) -> list[str]:
 def _gold_set(gold: Sequence[str] | None) -> set[str] | None:
     if gold is None:
         return None
-    cleaned = [str(item).strip() for item in gold if str(item).strip()]
-    if not cleaned:
-        return None
-    return set(cleaned)
+    return {str(item).strip() for item in gold if str(item).strip()}
 
 
 def hit_at_k(
@@ -39,6 +70,8 @@ def hit_at_k(
         return None
     if k < 1:
         raise ValueError("k must be >= 1")
+    if not gold:
+        return 0.0
     return float(any(item in gold for item in _as_ids(ranked_ids)[:k]))
 
 
@@ -52,6 +85,8 @@ def recall_at_k(
         return None
     if k < 1:
         raise ValueError("k must be >= 1")
+    if not gold:
+        return 0.0
     return len(gold.intersection(_as_ids(ranked_ids)[:k])) / len(gold)
 
 
@@ -60,6 +95,7 @@ def precision_at_k(
     gold_ids: Sequence[str] | None,
     k: int,
 ) -> float | None:
+    
     gold = _gold_set(gold_ids)
     if gold is None:
         return None
@@ -79,6 +115,8 @@ def mrr_at_k(
         return None
     if k < 1:
         raise ValueError("k must be >= 1")
+    if not gold:
+        return 0.0
     for rank, item in enumerate(_as_ids(ranked_ids)[:k], start=1):
         if item in gold:
             return 1.0 / rank
@@ -113,7 +151,7 @@ def ndcg_at_k(
     k: int = 5,
     relevance_judgments: Sequence[Mapping[str, Any]] | None = None,
 ) -> float | None:
-   
+  
     if k < 1:
         raise ValueError("k must be >= 1")
     grades = _grades_for_ids(gold_ids, relevance_judgments)
@@ -140,22 +178,37 @@ def ranking_bundle(
     k: int,
     relevance_judgments: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, float | None]:
+   
     return {
         f"hit@{k}": hit_at_k(ranked_ids, gold_ids, k),
         f"recall@{k}": recall_at_k(ranked_ids, gold_ids, k),
         f"precision@{k}": precision_at_k(ranked_ids, gold_ids, k),
         f"mrr@{k}": mrr_at_k(ranked_ids, gold_ids, k),
-        f"ndcg@{k}": ndcg_at_k(
+        f"ndcg@{k}": ndcg_at_k(ranked_ids, gold_ids=gold_ids, k=k),
+        f"ndcg_graded@{k}": ndcg_at_k(
             ranked_ids,
-            gold_ids=gold_ids,
+            gold_ids=None,
             k=k,
             relevance_judgments=relevance_judgments,
-        ),
+        )
+        if relevance_judgments
+        else None,
     }
 
 
+def gold_ranks(ranked_ids: Sequence[str], gold_ids: Sequence[str] | None) -> dict[str, int | None]:
+    gold = _gold_set(gold_ids) or set()
+    order = _as_ids(ranked_ids)
+    out: dict[str, int | None] = {}
+    for gid in sorted(gold):
+        try:
+            out[gid] = order.index(gid) + 1
+        except ValueError:
+            out[gid] = None
+    return out
+
+
 def claim_rate(counts: Mapping[str, int], key: str) -> float | None:
-   
     total = sum(max(0, int(v)) for v in counts.values())
     if total == 0:
         return None
@@ -180,4 +233,66 @@ def hallucination_bundle(counts: Mapping[str, int]) -> dict[str, float | None]:
         "answer_level_hallucination_rate": answer_hallucinated,
         "n_claims": float(total) if total else None,
         "n_determined_claims": float(determined) if determined else None,
+        "eligible_for_answer_level": determined > 0,
     }
+
+
+_WS = re.compile(r"\s+")
+
+
+def normalize_answer(text: str) -> str:
+    return _WS.sub(" ", (text or "").casefold()).strip()
+
+
+def exact_match(pred: str | None, ref: str | None) -> float | None:
+    if pred is None or ref is None:
+        return None
+    left = normalize_answer(pred)
+    right = normalize_answer(ref)
+    if not left or not right:
+        return None
+    return float(left == right)
+
+
+def token_overlap(pred: str | None, ref: str | None) -> dict[str, float | None]:
+    if pred is None or ref is None:
+        return {"token_precision": None, "token_recall": None, "token_f1": None}
+    pred_tokens = normalize_answer(pred).split()
+    ref_tokens = normalize_answer(ref).split()
+    if not pred_tokens or not ref_tokens:
+        return {"token_precision": None, "token_recall": None, "token_f1": None}
+    pred_set = set(pred_tokens)
+    ref_set = set(ref_tokens)
+    overlap = len(pred_set & ref_set)
+    precision = overlap / len(pred_set)
+    recall = overlap / len(ref_set)
+    if precision + recall == 0:
+        f1 = 0.0
+    else:
+        f1 = 2 * precision * recall / (precision + recall)
+    return {
+        "token_precision": precision,
+        "token_recall": recall,
+        "token_f1": f1,
+    }
+
+
+def query_answer_overlap(query: str | None, answer: str | None) -> float | None:
+  
+    if query is None or answer is None:
+        return None
+    q_tokens = [t for t in normalize_answer(query).split() if len(t) > 2]
+    a_tokens = set(normalize_answer(answer).split())
+    if not q_tokens or not a_tokens:
+        return None
+    return sum(t in a_tokens for t in q_tokens) / len(q_tokens)
+
+
+def key_fact_coverage(answer: str | None, key_facts: Sequence[str] | None) -> float | None:
+    if answer is None or not key_facts:
+        return None
+    blob = normalize_answer(answer)
+    facts = [normalize_answer(str(f)) for f in key_facts if str(f).strip()]
+    if not facts or not blob:
+        return None
+    return sum(fact in blob for fact in facts) / len(facts)

@@ -1,5 +1,655 @@
-{"query_id": "A01", "query": "Which foods can cause allergies?", "language": "en", "split": "eval", "task": "factoid", "answerable": false, "route_expected": "RAG", "relevant_chunk_ids": [], "relevant_source_ids": [], "relevant_document_ids": [], "relevant_image_source_ids": [], "expected_evidence_ids": [], "relevance_judgments": [{"chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000005", "grade": 1, "point_id": "44745727-d71b-57b7-8c36-914898e71566", "support_level": "topic_only", "note": "The chunk refers to food allergies but does not identify the specific foods that can trigger them."}], "reference_answer": null, "key_facts": [], "claim_annotations": [], "notes": "The chunk refers to food allergies but does not identify the specific foods that can trigger them."}
-{"query_id": "A02", "query": "ما أعراض حساسية الجلد؟", "language": "ar", "split": "eval", "task": "factoid", "answerable": false, "route_expected": "RAG", "relevant_chunk_ids": [], "relevant_source_ids": [], "relevant_document_ids": [], "relevant_image_source_ids": [], "expected_evidence_ids": [], "relevance_judgments": [{"chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000008", "grade": 1, "point_id": "e4cedee3-0e82-562a-b351-661f10dc7272", "support_level": "topic_only", "note": "يشير إلى حساسية الجلد دون وصف الأعراض."}], "reference_answer": null, "key_facts": [], "claim_annotations": [], "notes": "يشير إلى حساسية الجلد دون وصف الأعراض."}
-{"query_id": "D01", "query": "What is diabetes mellitus?", "language": "en", "split": "eval", "task": "factoid", "answerable": false, "route_expected": "RAG", "relevant_chunk_ids": [], "relevant_source_ids": [], "relevant_document_ids": [], "relevant_image_source_ids": [], "expected_evidence_ids": [], "relevance_judgments": [{"chunk_id": "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000002", "grade": 0, "point_id": "fd42fd72-937a-57a2-99ee-e2b6478d73b7", "support_level": "not_sufficient", "note": "The chunk only mentions a blood glucose reading and does not explain diabetes."}], "reference_answer": null, "key_facts": [], "claim_annotations": [], "notes": "The chunk only mentions a blood glucose reading and does not explain diabetes."}
-{"query_id": "D02", "query": "What is high blood pressure?", "language": "en", "split": "eval", "task": "factoid", "answerable": true, "route_expected": "RAG", "relevant_chunk_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"], "relevant_source_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e"], "relevant_document_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e"], "relevant_image_source_ids": [], "expected_evidence_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"], "relevance_judgments": [{"chunk_id": "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002", "grade": 3, "point_id": "acf0d938-2949-57b5-a117-faac817ec00d", "support_level": "direct", "note": "Defines high blood pressure as excessive force of blood against the walls of blood vessels."}], "reference_answer": null, "key_facts": [], "claim_annotations": [], "notes": "Defines high blood pressure as excessive force of blood against the walls of blood vessels."}
-{"query_id": "D03", "query": "هل لارتفاع ضغط الدم أعراض واضحة دائمًا؟", "language": "ar", "split": "eval", "task": "factoid", "answerable": true, "route_expected": "RAG", "relevant_chunk_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"], "relevant_source_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e"], "relevant_document_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e"], "relevant_image_source_ids": [], "expected_evidence_ids": ["e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"], "relevance_judgments": [{"chunk_id": "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002", "grade": 3, "point_id": "acf0d938-2949-57b5-a117-faac817ec00d", "support_level": "direct", "note": "يوضح أن ارتفاع ضغط الدم قد لا تكون له أعراض واضحة، وقد يسبب الصداع والدوخة وضيق التنفس."}], "reference_answer": null, "key_facts": [], "claim_annotations": [], "notes": "يوضح أن ارتفاع ضغط الدم قد لا تكون له أعراض واضحة، وقد يسبب الصداع والدوخة وضيق التنفس."}
+# split:
+# Dataset partition used for evaluation, such as "eval", "train", or "test".
+
+# task:
+# Type of question or task. "factoid" means a question asking for a specific fact.
+
+# answerable:
+# Whether the available knowledge source contains enough information
+# to answer the query. This does not guarantee successful retrieval.
+
+# route_expected:
+# Expected processing route for the query, such as "RAG".
+
+# relevant_chunk_ids:
+# IDs of the chunks judged relevant to answering the query.
+# These must be actual chunk IDs from the indexed data.
+
+# relevant_source_ids:
+# IDs identifying the relevant source records or source files,
+# according to the project's ID convention.
+
+# relevant_document_ids:
+# IDs of the relevant documents, according to the project's ID convention.
+
+# relevant_image_source_ids:
+# IDs of relevant image sources, if the query depends on images.
+# Use an empty list when no image evidence is relevant.
+
+# expected_evidence_ids:
+# IDs of evidence items expected to support the answer.
+# Follow the evaluation framework's convention for evidence IDs.
+
+# relevance_judgments:
+# Human or dataset judgments describing how relevant each chunk is.
+# Each judgment can contain:
+#   chunk_id: The actual ID of the judged chunk.
+#   grade: Numeric relevance score; interpret using the project's rubric.
+#   point_id: The Qdrant point ID, if used by the evaluator.
+#   support_level: How well the chunk supports the answer.
+#   note: Explanation of the judgment.
+
+# reference_answer:
+# The expected answer used as a reference during evaluation.
+
+# key_facts:
+# Essential facts expected in a correct answer.
+# Used to measure coverage of the key information.
+
+# claim_annotations:
+# Annotations for claims made by the system's generated answer,
+# such as whether each claim is supported, unsupported, or contradicted.
+# Exact labels must follow the evaluator's schema.
+
+# notes:
+# Additional context, caveats, or explanations about the query and its labels.
+
+{
+    "query_id": "A01",
+    "query": "Which foods can cause allergies?",
+    "language": "en",
+    "split": "eval",
+    "task": "factoid",
+    "answerable": true,
+    "route_expected": "RAG",
+
+    "relevant_chunk_ids": [
+        "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+
+    "relevant_source_ids": [
+        "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a"
+    ],
+
+    "relevant_document_ids": [
+        "3eaa27c26680c9d06bd508cde02bd86832490d14dc3011c6cf46c8f079dce99a"
+    ],
+
+    "relevant_image_source_ids": [],
+
+    "expected_evidence_ids": [
+        "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+
+    "relevance_judgments": [
+        {
+            "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001",
+            "grade": 3,
+            "point_id": null ,
+            "support_level": "direct",
+            "note": "The chunk identifies common food allergens and directly supports the answer."
+        }
+    ],
+
+    "reference_answer": "Common food allergens include peanuts, milk, eggs, fish, nuts, wheat, and soy. The specific food triggers vary from person to person.",
+
+    "key_facts": [
+        "Common food allergens include peanuts.",
+        "Common food allergens include milk.",
+        "Common food allergens include eggs.",
+        "Common food allergens include fish.",
+        "Common food allergens include nuts.",
+        "Common food allergens include wheat.",
+        "Common food allergens include soy."
+    ],
+
+    
+"claim_annotations": [
+  {
+    "claim": "Fish can cause food allergies.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+    "note": "Fish is listed among common food allergens in the source chunk."
+  },
+  {
+    "claim": "Eggs can cause food allergies.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+    "note": "Eggs are listed among common food allergens in the source chunk."
+  },
+  {
+    "claim": "Milk can cause food allergies.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+    "note": "Milk is listed among common food allergens in the source chunk."
+  },
+  {
+    "claim": "Soybeans can cause food allergies.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000007"
+    ],
+    "note": "Soy is listed among foods associated with food allergies in this source chunk."
+  },
+  {
+    "claim": "Wheat can cause food allergies.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+    "note": "Wheat is listed among common food allergens in the source chunk."
+  },
+  {
+    "claim": "Nuts can cause food allergies.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+    "note": "Nuts are listed among common food allergens in the source chunk."
+  },
+  {
+    "claim": "Food allergies can cause symptoms such as hives, swelling of the lips and tongue, stomach pain, and respiratory issues.",
+    "claim_type": "factual",
+    "support_level": "needs_verification",
+    "label": "indeterminate",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000006"
+    ],
+    "note": "The available evidence does not directly establish every symptom listed in this claim."
+  }
+],
+
+    "notes": "The selected chunk should explicitly identify the foods that can trigger allergies."
+}
+
+
+{
+    "query_id": "A02",
+    "query": "ما أعراض حساسية الجلد؟",
+    "language": "ar",
+    "split": "eval",
+    "task": "factoid",
+    "answerable": true,
+    "route_expected": "RAG",
+
+    "relevant_chunk_ids": [
+        "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+
+    "relevant_source_ids": [
+        "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a"
+    ],
+
+    "relevant_document_ids": [
+        "3eaa27c26680c9d06bd508cde02bd86832490d14dc3011c6cf46c8f079dce99a"
+    ],
+
+    "relevant_image_source_ids": [],
+
+    "expected_evidence_ids": [
+        "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+
+    "relevance_judgments": [
+        {
+            "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+            "grade": 3,
+            "point_id": null,
+            "support_level": "direct",
+            "note": "يذكر الجزء المختار أعراض حساسية الجلد ويدعم الإجابة مباشرة."
+        }
+    ],
+
+    "reference_answer": "تشمل أعراض حساسية الجلد الاحمرار، والحكة الشديدة، وجفاف الجلد وتقشره، والبثور. وقد يظهر طفح جلدي أحمر بارز يسبب حكة شديدة، كما في الشرى.",
+
+    "key_facts": [
+        "احمرار الجلد.",
+        "حكة شديدة.",
+        "جفاف الجلد وتقشره.",
+        "ظهور بثور.",
+        "قد يظهر طفح جلدي أحمر بارز ومثير للحكة كما في الشرى."
+    ],
+
+  
+"claim_annotations": [
+  {
+    "claim": "من أعراض حساسية الجلد ظهور بثور على الجلد.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+    "note": "الجزء 000002 يذكر البثور ضمن أعراض حساسية الجلد."
+  },
+  {
+    "claim": "من أعراض حساسية الجلد تقشر الجلد وجفافه.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+    "note": "الجزء 000002 يذكر جفاف الجلد وتقشره."
+  },
+  {
+    "claim": "قد تشمل أعراض حساسية الجلد الحكة الشديدة واحمرار الجلد والطفح الجلدي.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+    "note": "الجزء 000002 يدعم الحكة والاحمرار؛ يجب التأكد من نص المصدر قبل اعتماد دعم الطفح الجلدي."
+  },
+  {
+    "claim": "قد تشمل أعراض الحساسية تورم الوجه أو اللسان أو الشفاه.",
+    "claim_type": "factual",
+    "support_level": "needs_verification",
+    "label": "indeterminate",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000014"
+    ],
+    "note": "الدليل المحدد لا يثبت بوضوح كل أنواع التورم المذكورة."
+  },
+  {
+    "claim": "قد تشمل أعراض الحساسية صعوبة التنفس والغثيان والدوار.",
+    "claim_type": "factual",
+    "support_level": "needs_verification",
+    "label": "indeterminate",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+    "note": "يجب التحقق من أن الدليل يذكر صعوبة التنفس والغثيان والدوار تحديدًا."
+  },
+  {
+    "claim": "قد تسبب حساسية الحشرات، مثل النحل أو النمل، ألمًا أو تورمًا في موضع اللدغة.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+    "note": "Chunk 000002 lists bee/wasp/fire-ant allergy with painful large swelling at the sting site."
+  },
+  {
+    "claim": "قد تشير صعوبة التنفس أو الدوار إلى تفاعل تحسسي خطير يستلزم تدخلًا طبيًا فوريًا.",
+    "claim_type": "medical_safety",
+    "support_level": "needs_verification",
+    "label": "indeterminate",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000014",
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
+    ],
+    "note": "تحذير طبي مهم، لكن تصنيفه يعتمد على وجود دليل مباشر في النصوص المسترجعة."
+  }
+],
+
+    "notes": "يجب أن يدعم الجزء المسترجع أعراض حساسية الجلد المذكورة في الإجابة المرجعية."
+}
+
+
+{
+    "query_id": "D01",
+    "query": "What is diabetes mellitus?",
+    "language": "en",
+    "split": "eval",
+    "task": "factoid",
+    "answerable": true,
+    "route_expected": "RAG",
+
+    "relevant_chunk_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+
+    "relevant_source_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e"
+    ],
+
+    "relevant_document_ids": [
+        "a3aa0d2581800ab0cca5a082e58b42f18d253b186926a495172252f849b17f11"
+    ],
+
+    "relevant_image_source_ids": [],
+
+    "expected_evidence_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+
+    "relevance_judgments": [
+        {
+            "chunk_id": "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001",
+            "grade": 3,
+            "point_id": null,
+            "support_level": "direct",
+            "note": "The selected chunk should explain diabetes mellitus, including high blood sugar, insulin, and the main types."
+        }
+    ],
+
+    "reference_answer": "Diabetes is a chronic disease in which blood sugar is too high. The body needs insulin to control blood sugar levels. The two main types described in the source are Type 1 and Type 2 diabetes.",
+
+    "key_facts": [
+        "Diabetes is a chronic disease.",
+        "Blood sugar is too high.",
+        "The body needs insulin to control blood sugar levels.",
+        "The two main types are Type 1 and Type 2 diabetes."
+    ],
+
+   
+"claim_annotations": [
+  {
+    "claim": "Diabetes mellitus is a chronic disease characterized by high blood sugar levels.",
+    "claim_type": "definition",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+    "note": "The chunk describes diabetes as a chronic disease involving high blood sugar."
+  },
+  {
+    "claim": "The body requires insulin to regulate blood sugar levels.",
+    "claim_type": "mechanism",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+    "note": "The chunk discusses insulin and its role in blood sugar control."
+  },
+  {
+    "claim": "There are two main types of diabetes: Type 1 and Type 2.",
+    "claim_type": "classification",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+    "note": "The chunk identifies Type 1 and Type 2 diabetes."
+  },
+  {
+    "claim": "Type 1 diabetes requires insulin from the start.",
+    "claim_type": "treatment",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+    "note": "The Diseases.pdf chunk states Type 1 (needs insulin from start)."
+  },
+  {
+    "claim": "Type 2 diabetes is often associated with obesity and inactivity.",
+    "claim_type": "risk_factors",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+    "note": "The chunk states Type 2 (from obesity and inactivity)."
+  },
+  {
+    "claim": "Symptoms include excessive thirst, frequent urination, fatigue, constant hunger, and blurred vision.",
+    "claim_type": "symptoms",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+    "note": "The chunk lists symptoms associated with diabetes."
+  },
+  {
+    "claim": "Treatment involves a healthy diet without excess sugar, regular exercise, and maintaining a healthy weight.",
+    "claim_type": "management",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
+    ],
+    "note": "The chunk lists diet without excess sugar, exercise, and healthy weight."
+  }
+],
+
+    "notes": "Verify that the selected chunk directly supports the definition and the listed key facts."
+}
+
+
+{
+    "query_id": "D02",
+    "query": "What is high blood pressure?",
+    "language": "en",
+    "split": "eval",
+    "task": "factoid",
+    "answerable": true,
+    "route_expected": "RAG",
+
+    "relevant_chunk_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+
+    "relevant_source_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e"
+    ],
+
+    "relevant_document_ids": [
+        "a3aa0d2581800ab0cca5a082e58b42f18d253b186926a495172252f849b17f11"
+    ],
+
+    "relevant_image_source_ids": [],
+
+    "expected_evidence_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+
+    "relevance_judgments": [
+        {
+            "chunk_id": "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002",
+            "grade": 3,
+            "point_id": "acf0d938-2949-57b5-a117-faac817ec00d",
+            "support_level": "direct",
+            "note": "Defines high blood pressure as excessive force of blood against the walls of blood vessels."
+        }
+    ],
+
+    "reference_answer": "High blood pressure means the force of blood against the walls of blood vessels is too high.",
+
+    "key_facts": [
+        "The force of blood against the walls of blood vessels is too high."
+    ],
+
+"claim_annotations": [
+  {
+    "claim": "High blood pressure means the force of blood on vessel walls is too high.",
+    "claim_type": "definition",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "Diseases.pdf chunk 000002 states this definition."
+  },
+  {
+    "claim": "Causes of high blood pressure include excess salt, stress, anxiety, obesity, inactivity, and family history.",
+    "claim_type": "risk_factors",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "The same chunk lists these causes."
+  },
+  {
+    "claim": "High blood pressure often has no obvious symptoms.",
+    "claim_type": "symptoms",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "The chunk says it often has no obvious symptoms."
+  },
+  {
+    "claim": "High blood pressure can cause headaches, dizziness, and shortness of breath.",
+    "claim_type": "symptoms",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "The chunk lists headaches, dizziness, and shortness of breath."
+  }
+],
+
+    "notes": "The selected chunk directly defines high blood pressure."
+}
+
+
+{
+    "query_id": "D03",
+    "query": "هل لارتفاع ضغط الدم أعراض واضحة دائمًا؟",
+    "language": "ar",
+    "split": "eval",
+    "task": "factoid",
+    "answerable": true,
+    "route_expected": "RAG",
+
+    "relevant_chunk_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+
+    "relevant_source_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e"
+    ],
+
+    "relevant_document_ids": [
+        "a3aa0d2581800ab0cca5a082e58b42f18d253b186926a495172252f849b17f11"
+    ],
+
+    "relevant_image_source_ids": [],
+
+    "expected_evidence_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+
+    "relevance_judgments": [
+        {
+            "chunk_id": "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002",
+            "grade": 3,
+            "point_id": "acf0d938-2949-57b5-a117-faac817ec00d",
+            "support_level": "direct",
+            "note": "يوضح أن ارتفاع ضغط الدم قد لا تكون له أعراض واضحة، وقد يسبب الصداع والدوخة وضيق التنفس."
+        }
+    ],
+
+    "reference_answer": "لا، غالبًا لا تكون لارتفاع ضغط الدم أعراض واضحة، لكنه قد يسبب الصداع والدوخة وضيق التنفس.",
+
+    "key_facts": [
+        "ارتفاع ضغط الدم غالبًا لا تكون له أعراض واضحة.",
+        "قد يسبب الصداع.",
+        "قد يسبب الدوخة.",
+        "قد يسبب ضيق التنفس."
+    ],
+
+   "claim_annotations": [
+  {
+    "claim": "ارتفاع ضغط الدم غالبًا لا تكون له أعراض واضحة.",
+    "claim_type": "general_medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "Diseases.pdf chunk 000002: Often has no obvious symptoms."
+  },
+  {
+    "claim": "ارتفاع ضغط الدم قد يسبب الصداع.",
+    "claim_type": "symptoms",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "Chunk 000002 lists headaches."
+  },
+  {
+    "claim": "ارتفاع ضغط الدم قد يسبب الدوخة.",
+    "claim_type": "symptoms",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "Chunk 000002 lists dizziness."
+  },
+  {
+    "claim": "ارتفاع ضغط الدم قد يسبب ضيق التنفس.",
+    "claim_type": "symptoms",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "Chunk 000002 lists shortness of breath."
+  },
+  {
+    "claim": "الحالة رقم 34 تخص هند مصطفى رامي، وعمرها 52 سنة، وتشخيصها ارتفاع ضغط الدم الأساسي.",
+    "claim_type": "patient_information",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000034"
+    ],
+    "note": "Chunk 000034 lists Hend Mostafa Ramy, age 52, essential hypertension. Chunk 000030 lists the same name at age 53; this claim is only about 000034."
+  },
+  {
+    "claim": "سجل الحالة في الجزء 000034 يذكر صداعًا متكررًا في الصباح الباكر ودوارًا وطنينًا في الأذن وخفقانًا خفيفًا.",
+    "claim_type": "symptoms",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000034"
+    ],
+    "note": "These symptoms are this patient's recorded symptoms, not a general Diseases.pdf list (which has headache, dizziness, SOB only)."
+  },
+  {
+    "claim": "ارتفاع ضغط الدم لا يسبب أعراضًا واضحة لدى جميع المصابين.",
+    "claim_type": "symptom_frequency",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "Often has no obvious symptoms implies not all patients have obvious symptoms."
+  },
+  {
+    "claim": "يُعرف ارتفاع ضغط الدم بأنه مرض خفي أو silent disease خاصة في المراحل المبكرة.",
+    "claim_type": "general_medical_fact",
+    "support_level": "needs_verification",
+    "label": "unsupported",
+    "evidence_ids": [
+      "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
+    ],
+    "note": "Chunk 000002 does not use silent disease or early-stage wording. Related but not the same claim as often no obvious symptoms."
+  }
+],
+
+    "notes": "يدعم الجزء المسترجع الإجابة عن غياب الأعراض الواضحة والأعراض المحتملة."
+}
