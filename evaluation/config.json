@@ -19,5 +19,6 @@
   "evaluation_track": "full_pipeline",
   "optional_llm_judge": false,
   "frozen_candidate_pool_path": null,
+  "human_review_path": null,
   "notes": "execute=false is dry-run. Set execute true only after a frozen ragshield_test collection is verified. Do not pass vector_size into QdrantStore (it creates missing collections)."
 }

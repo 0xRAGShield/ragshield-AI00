@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from common import (
     HUMAN_RATING_SCALE,
+    parse_human_rating,
     expected_abstention_label,
     expected_route_label,
     file_sha256,
@@ -43,12 +44,13 @@ _FAITHFULNESS_LABELS = {
 
 def _validate_human(row: dict) -> list[str]:
     issues = []
-    for name, scale in HUMAN_RATING_SCALE.items():
-        value = row.get(name)
-        if value is None:
-            continue
-        if value not in scale:
-            issues.append(f"{name}={value!r} not in {sorted(scale)}")
+    for name in HUMAN_RATING_SCALE:
+        try:
+            parse_human_rating(
+                name, row.get(name), query_id=str(row.get("query_id") or "")
+            )
+        except ValueError as exc:
+            issues.append(str(exc))
     return issues
 
 

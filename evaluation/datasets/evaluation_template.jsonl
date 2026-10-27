@@ -62,6 +62,12 @@
     "task": "factoid",
     "answerable": true,
     "route_expected": "RAG",
+    "human_correctness": 2,
+    "human_faithfulness": 1, 
+    "human_relevance": 2, 
+    "human_completeness": 2, 
+    "human_abstention": 2,
+    "human_medical_safety": 2,
 
     "relevant_chunk_ids": [
         "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001"
@@ -189,6 +195,12 @@
     "task": "factoid",
     "answerable": true,
     "route_expected": "RAG",
+    "human_correctness": 1, 
+    "human_faithfulness": 1, 
+    "human_relevance": 2, 
+    "human_completeness": 2, 
+    "human_abstention": 2, 
+    "human_medical_safety": 2,
 
     "relevant_chunk_ids": [
         "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
@@ -316,6 +328,12 @@
     "task": "factoid",
     "answerable": true,
     "route_expected": "RAG",
+    "human_correctness": 2, 
+    "human_faithfulness": 2, 
+    "human_relevance": 2, 
+    "human_completeness": 2, 
+    "human_abstention": 2, 
+    "human_medical_safety": 2,
 
     "relevant_chunk_ids": [
         "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000001"
@@ -440,6 +458,12 @@
     "task": "factoid",
     "answerable": true,
     "route_expected": "RAG",
+    "human_correctness": 2, 
+    "human_faithfulness": 2, 
+    "human_relevance": 2, 
+    "human_completeness": 2, 
+    "human_abstention": 2, 
+    "human_medical_safety": 1,
 
     "relevant_chunk_ids": [
         "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
@@ -530,6 +554,12 @@
     "task": "factoid",
     "answerable": true,
     "route_expected": "RAG",
+    "human_correctness": 2, 
+    "human_faithfulness": 1, 
+    "human_relevance": 2, 
+    "human_completeness": 2, 
+    "human_abstention": 2, 
+    "human_medical_safety": 1,
 
     "relevant_chunk_ids": [
         "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000002"
@@ -653,3 +683,1028 @@
 
     "notes": "يدعم الجزء المسترجع الإجابة عن غياب الأعراض الواضحة والأعراض المحتملة."
 }
+
+{"query_id":"C01",
+ "query":"What is cancer, and how can it spread to other organs?",
+ "language":"en",
+ "split":"eval",
+ "task":"factoid",
+ "answerable":true,
+ "route_expected":"RAG",
+ "human_correctness": 2,
+ "human_faithfulness": 2,
+ "human_relevance": 2,
+ "human_completeness": 2,
+ "human_abstention": 2,
+ "human_medical_safety": 2,
+ "relevant_chunk_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000000" , "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000001"],
+ "relevant_source_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2"],
+ "relevant_document_ids":["f8e41fcebb9599ebf79ff2825ce9776041ff47f30666d0850717645679d66da2"],
+ "relevant_image_source_ids":[],
+ "expected_evidence_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000000","8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000001"],
+ "relevance_judgments":[{
+    "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000000",
+    "grade": 3,
+    "point_id": null,
+    "support_level": "direct",
+    "note": "The chunk supports the definition of cancer and the uncontrolled growth of abnormal cells."
+  },
+  {
+    "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000001",
+    "grade": 3,
+    "point_id": null,
+    "support_level": "direct",
+    "note": "The chunk supports the explanation of cancer spreading to other organs, known as metastasizing."
+  }
+],
+ "reference_answer":"Cancer is a group of diseases in which abnormal cells grow uncontrollably, cross their usual boundaries, invade nearby tissues, and may spread to other organs. This spread is called metastasizing.",
+ "key_facts":["Cancer involves uncontrolled growth of abnormal cells.","Abnormal cells can invade nearby tissues.","Cancer can spread to other organs.","The spread to other organs is called metastasizing."],
+ "claim_annotations":[  {
+    "claim": "Cancer involves uncontrolled growth of abnormal cells.",
+    "claim_type": "definition",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000000"
+    ],
+    "note": "The retrieved answer directly describes uncontrolled growth of abnormal cells."
+  },
+  {
+    "claim": "Abnormal cells can invade nearby tissues.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000000"
+    ],
+    "note": "The retrieved answer states that abnormal cells can invade adjoining parts of the body."
+  },
+  {
+    "claim": "Cancer can spread to other organs.",
+    "claim_type": "factual",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000000",
+      "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000001"
+    ],
+    "note": "The retrieved answer explicitly describes spread to other organs."
+  },
+  {
+    "claim": "The spread of cancer to other organs is called metastasizing.",
+    "claim_type": "definition",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000001"
+    ],
+    "note": "The retrieved answer explicitly names this process metastasizing."
+  }
+],
+ "notes":"Reference answer is based on the Understanding Cancer guide. Add actual chunk IDs and evidence judgments after retrieval."}
+
+ {"query_id":"C02",
+ "query":"What are the main risk factors for breast and lung cancer mentioned in the guide?",
+ "language":"en",
+ "split":"eval",
+ "task":"factoid",
+ "answerable":true,
+ "route_expected":"RAG",
+ "human_correctness": 2,
+ "human_faithfulness": 2,
+ "human_relevance": 2,
+ "human_completeness": 2,
+ "human_abstention": 2,
+ "human_medical_safety": 2,
+ "relevant_chunk_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002"],
+ "relevant_source_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2"],
+ "relevant_document_ids":["f8e41fcebb9599ebf79ff2825ce9776041ff47f30666d0850717645679d66da2"],
+ "relevant_image_source_ids":[],
+ "expected_evidence_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002"],
+ "relevance_judgments":[{
+      "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002",
+      "grade": 3,
+      "point_id": null,
+      "support_level": "direct",
+      "note": "The retrieved chunk supports the listed breast and lung cancer risk factors."
+    }],
+ "reference_answer":"The listed breast cancer risk factors are age, BRCA1/2 genetic mutations, family history, and alcohol consumption. The listed lung cancer risk factors include tobacco use, secondhand smoke, and exposure to radon or asbestos. Tobacco use is identified as the primary cause of lung cancer.",
+ "key_facts":["Breast cancer risk factors include age.","BRCA1/2 genetic mutations are listed as breast cancer risk factors.","Family history and alcohol consumption are listed as breast cancer risk factors.","Tobacco use is the primary cause of lung cancer in the guide.","Secondhand smoke, radon, and asbestos exposure are listed as lung cancer risk factors."],
+ "claim_annotations": [
+    {
+      "claim": "Age is a listed risk factor for breast cancer.",
+      "claim_type": "risk_factor",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002"
+      ],
+      "note": "The retrieved answer lists age under breast cancer risk factors."
+    },
+    {
+      "claim": "BRCA1/2 genetic mutations are listed as breast cancer risk factors.",
+      "claim_type": "risk_factor",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002"
+      ],
+      "note": "The retrieved answer explicitly lists BRCA1/2 genetic mutations."
+    },
+    {
+      "claim": "Family history and alcohol consumption are listed as breast cancer risk factors.",
+      "claim_type": "risk_factor",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002"
+      ],
+      "note": "Both factors appear in the retrieved answer."
+    },
+    {
+      "claim": "Tobacco use is identified as the primary cause of lung cancer in the guide.",
+      "claim_type": "risk_factor",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002"
+      ],
+      "note": "The retrieved answer explicitly calls tobacco use the primary cause."
+    },
+    {
+      "claim": "Secondhand smoke and exposure to radon or asbestos are listed as lung cancer risk factors.",
+      "claim_type": "risk_factor",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000002"
+      ],
+      "note": "The retrieved answer lists all three exposures."
+    }
+  ],
+ "notes":"Use only risk factors stated in the supplied guide."}
+
+ { "query_id": "C03",
+  "query": "Which screening methods are listed for colorectal cancer?",
+  "language": "en",
+  "split": "eval",
+  "task": "factoid",
+  "answerable": true,
+  "route_expected": "RAG",
+  "human_correctness": 2,
+  "human_faithfulness": 2,
+  "human_relevance": 2,
+  "human_completeness": 2,
+  "human_abstention": 2,
+  "human_medical_safety": 2,
+  "relevant_chunk_ids": [
+    "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000004"
+  ],
+  "relevant_source_ids": [
+    "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2"
+  ],
+  "relevant_document_ids": [
+    "f8e41fcebb9599ebf79ff2825ce9776041ff47f30666d0850717645679d66da2"
+  ],
+  "relevant_image_source_ids": [],
+  "expected_evidence_ids": [
+    "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000004"
+  ],
+  "relevance_judgments": [
+    {
+      "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000004",
+      "grade": 3,
+      "point_id": null,
+      "support_level": "direct",
+      "note": "Directly supports the three colorectal cancer screening methods listed in the answer."
+    }
+  ],
+ "reference_answer":"The guide lists colonoscopy, stool DNA tests, and fecal occult blood tests as screening methods for colorectal cancer.",
+ "key_facts":["Colonoscopy is listed as a screening method.","Stool DNA tests are listed as a screening method.","Fecal occult blood tests are listed as a screening method."],
+ "claim_annotations": [
+    {
+      "claim": "Colonoscopy is listed as a screening method for colorectal cancer.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000004"
+      ],
+      "note": "Explicitly listed in the retrieved evidence."
+    },
+    {
+      "claim": "Stool DNA tests are listed as a screening method for colorectal cancer.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000004"
+      ],
+      "note": "Explicitly listed in the retrieved evidence."
+    },
+    {
+      "claim": "Fecal occult blood tests are listed as a screening method for colorectal cancer.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000004"
+      ],
+      "note": "Explicitly listed in the retrieved evidence."
+    }
+  ],
+ "notes":"Reference answer follows the colorectal cancer screening section."}
+
+ {"query_id":"C04",
+ "query":"ما الإجراءات المذكوره لتقليل خطر الإصابة بالسرطان؟",
+ "language":"ar",
+ "split":"eval",
+ "task":"factoid",
+ "answerable":true,
+ "route_expected":"RAG",
+ "human_correctness": 1,
+ "human_faithfulness": 1,
+ "human_relevance": 2,
+ "human_completeness": 1,
+ "human_abstention": 2,
+ "human_medical_safety": 2,
+ "relevant_chunk_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000005","8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000006","8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000007"],
+ "relevant_source_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2"],
+ "relevant_document_ids":["f8e41fcebb9599ebf79ff2825ce9776041ff47f30666d0850717645679d66da2"],
+ "relevant_image_source_ids":[],
+ "expected_evidence_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000005","8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000006","8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000007"],
+ "relevance_judgments":[{
+      "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000005",
+      "grade": 3,
+      "point_id": null,
+      "support_level": "direct",
+      "note": "يتضمن معلومات مرتبطة بالوقاية من السرطان، وفقًا للمصدر المسترجع."
+    },
+    {
+      "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000006",
+      "grade": 3,
+      "point_id": null,
+      "support_level": "direct",
+      "note": "يتضمن معلومات مرتبطة بالوقاية من السرطان، وفقًا للمصدر المسترجع."
+    },
+    {
+      "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000007",
+      "grade": 3,
+      "point_id": null,
+      "support_level": "direct",
+      "note": "يدعم المعلومات المتعلقة بالنظام الغذائي الصحي والنشاط البدني."
+    },
+    {
+      "chunk_id": "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000004",
+      "grade": 3,
+      "point_id": null,
+      "support_level": "direct",
+      "note": "استُشهد به لدعم معلومات الوزن الصحي والنوم وتجنب التوتر والتدخين والكحول والفحوصات الدورية وتقليل السكر والملح."
+    }
+  ],
+ "reference_answer":"يذكر الدليل تجنب التبغ، وممارسة النشاط البدني بانتظام، واتباع نظام غذائي صحي غني بالفواكه والخضروات والحبوب الكاملة، وتقليل اللحوم المصنعة، والحفاظ على وزن صحي، وأخذ التطعيمات المهمة مثل تطعيمي التهاب الكبد B وفيروس الورم الحليمي البشري HPV.",
+ "key_facts":["تجنب التبغ يقلل خطر الإصابة بالسرطان.","النشاط البدني المنتظم يساعد في تقليل الخطر.","تناول الفواكه والخضروات والحبوب الكاملة من استراتيجيات الوقاية المذكورة.","تقليل اللحوم المصنعة والحفاظ على وزن صحي من استراتيجيات تقليل الخطر.","يذكر الدليل تطعيمي HBV وHPV كأدوات للوقاية من بعض أنواع السرطان."],
+ "claim_annotations": [
+    {
+      "claim": "اتباع نظام غذائي صحي يشمل الفواكه والخضروات والحبوب الكاملة وتقليل اللحوم المصنعة والسكر الزائد من الإجراءات المذكورة.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000007"
+      ],
+      "note": "وفقًا للإجابة المسترجعة."
+    },
+    {
+      "claim": "ممارسة النشاط البدني بانتظام تساعد في تقليل خطر بعض أنواع السرطان.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000007"
+      ],
+      "note": "وفقًا للإجابة المسترجعة."
+    },
+    {
+      "claim": "الحفاظ على وزن صحي والحصول على نوم كافٍ وتجنب التوتر من الإجراءات المذكورة.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000004"
+      ],
+      "note": "الإجابة تنسب هذه المعلومات إلى هذا المصدر."
+    },
+    {
+      "claim": "تجنب التدخين والكحول وإجراء الفحوصات الدورية وتقليل السكر والملح من الإجراءات المذكورة.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "e1c59e60738bde64aa366585663c29295c412bcd212905c235a1260d29f75e1e:chunk:000004"
+      ],
+      "note": "الإجابة تنسب هذه المعلومات إلى هذا المصدر."
+    },
+    {
+      "claim": "يذكر الدليل تطعيمي التهاب الكبد B وHPV كوسيلتين للوقاية من السرطان.",
+      "claim_type": "medical_fact",
+      "support_level": "none",
+      "label": "unsupported",
+      "evidence_ids": [],
+      "note": "لم تذكر الإجابة المسترجعة هذين التطعيمين؛ يلزم التحقق من نص الدليل قبل اعتماد الادعاء."
+    }
+  ],
+ "notes":"الإجابة مستندة إلى قسم الوقاية وتقليل المخاطر في دليل Understanding Cancer."}
+
+ {"query_id":"C05",
+ "query":"ما الفرق بين التشخيص المبكر والفحص للكشف عن السرطان؟",
+ "language":"ar",
+ "split":"eval",
+ "task":"factoid",
+ "answerable":true, 
+ "route_expected":"RAG",
+ "human_correctness": 1,
+ "human_faithfulness": 1,
+ "human_relevance": 2,
+ "human_completeness": 1,
+ "human_abstention": 2,
+ "human_medical_safety": 2,
+ "relevant_chunk_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000007","8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000008"],
+ "relevant_source_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2"],
+ "relevant_document_ids":["f8e41fcebb9599ebf79ff2825ce9776041ff47f30666d0850717645679d66da2"],
+ "relevant_image_source_ids":[],
+ "expected_evidence_ids":["8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000007","8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000008"],
+ "relevance_judgments":[{
+      "chunk_id": "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000009",
+      "grade": 3,
+      "point_id": null,
+      "support_level": "direct",
+      "note": "يوضح مفهوم التشخيص المبكر وعلاقته بالوعي بالأعراض، لكنه لا يقدم مقارنة مكتملة مع الفحص للكشف عن السرطان."
+    }],
+ "reference_answer":"التشخيص المبكر يعتمد على معرفة العلامات والأعراض المبكرة للسرطان وطلب التقييم الطبي لتشخيص المرض وعلاجه في مراحله المبكرة. أما الفحص للكشف عن السرطان فيهدف إلى تحديد الأشخاص الذين لديهم تغيرات أو نتائج غير طبيعية قد تشير إلى السرطان أو مرحلة ما قبل السرطان حتى لو لم تظهر عليهم أعراض، ثم إحالتهم للتشخيص والعلاج.",
+ "key_facts":["التشخيص المبكر يعتمد على الوعي بالعلامات والأعراض المبكرة.","التشخيص المبكر يساعد على تشخيص السرطان وعلاجه في مرحلة مبكرة.","الفحص قد يُجرى لأشخاص لم تظهر عليهم أعراض.","الفحص يهدف إلى اكتشاف تغيرات قد تشير إلى السرطان أو ما قبل السرطان.","النتائج غير الطبيعية تستدعي الإحالة للتشخيص والعلاج."],
+ "claim_annotations":[{
+      "claim": "يرتبط التشخيص المبكر بالوعي بأعراض السرطان.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000009"
+      ],
+      "note": "مذكور في الإجابة المسترجعة."
+    },
+    {
+      "claim": "يهدف التشخيص المبكر إلى اكتشاف السرطان وعلاجه في مراحله المبكرة.",
+      "claim_type": "medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "8f8da6952e1ea5c7d38c7044b71fd4f64318ddf8ca68e420bac2a6d16076d3b2:chunk:000009"
+      ],
+      "note": "مذكور في الإجابة المسترجعة."
+    },
+    {
+      "claim": "يحدد المحتوى المسترجع الفرق بين التشخيص المبكر والفحص للكشف عن السرطان.",
+      "claim_type": "evidence_coverage",
+      "support_level": "none",
+      "label": "unsupported",
+      "evidence_ids": [],
+      "note": "الإجابة المسترجعة تصرح بعدم وجود مقارنة واضحة في المحتوى."
+    }],
+ "notes":"المقارنة مأخوذة من قسم أهمية الكشف المبكر في الدليل."}
+
+ {"query_id":"P01",
+  "query":"What medication allergy does Manar Abdelbaky have according to her personal health profile?",
+  "language":"en",
+  "split":"eval",
+  "task":"factoid",
+  "answerable":true,
+  "route_expected":"RAG",
+  "human_correctness": 1,
+  "human_faithfulness": 2,
+  "human_relevance": 0,
+  "human_completeness": 0,
+  "human_abstention": 2,
+  "human_medical_safety": 2,
+  "relevant_chunk_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000001"],
+  "relevant_source_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951"],
+  "relevant_document_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951"],
+  "relevant_image_source_ids":[],
+  "expected_evidence_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000001"],
+  "relevance_judgments":[{
+      "chunk_id": "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000001",
+      "grade": 3,
+      "point_id": "60b016a8-e9fe-5dfe-ad94-74ad3046b63f",
+      "support_level": "direct",
+      "note": "The personal health profile explicitly states a mild penicillin allergy."
+    }],
+  "reference_answer":"According to Manar Abdelbaky's personal health profile, she has a mild allergy to penicillin.",
+  "key_facts":["The profile belongs to Manar Abdelbaky.","Manar has a listed allergy to penicillin.","The allergy is described as mild."],
+  "claim_annotations":[
+    {
+      "claim": "Manar Abdelbaky has a mild allergy to penicillin.",
+      "claim_type": "personal_health_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000001"
+      ],
+      "note": "Explicitly stated in the personal health profile, but absent from the evidence retrieved in this test."
+    }],
+    "notes":"The answer must be grounded in Manar's personal health profile, not in another patient's record."}
+
+ {"query_id":"P02",
+  "query":"ايه فصيلة دم منار عبدالباقي ؟",
+  "language":"ar",
+  "split":"eval",
+  "task":"factoid",
+  "answerable":true,
+  "route_expected":"RAG",
+  "human_correctness": 2,
+  "human_faithfulness": 2,
+  "human_relevance": 2,
+  "human_completeness": 2,
+  "human_abstention": 2,
+  "human_medical_safety": 2,
+  "relevant_chunk_ids":[ "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000001"],
+  "relevant_source_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951"],
+  "relevant_document_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951"],
+  "relevant_image_source_ids":[],
+  "expected_evidence_ids":[ "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000001"],
+  "relevance_judgments":[ {
+      "chunk_id": "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000001",
+      "grade": 3,
+      "point_id": "60b016a8-e9fe-5dfe-ad94-74ad3046b63f",
+      "support_level": "direct",
+      "note": "The original personal health profile states a mild penicillin allergy. This is expected gold evidence, not evidence retrieved in this run."
+    }
+],
+  "reference_answer":"فصيلة دم منار عبدالباقي، وفقًا لملفها الصحي الشخصي، هي O موجب (O+).",
+  "key_facts":["الملف الصحي يخص منار عبدالباقي.","فصيلة دم منار المسجلة هي O+."],
+  "claim_annotations":[
+    {
+      "claim": "The retrieved evidence does not contain information about Manar's medication allergies.",
+      "claim_type": "retrieval_limitation",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [],
+      "note": "This describes the system's reported limitation in the actual response; verify retrieved chunks in the execution log."
+    },
+    {
+      "claim": "It is not possible to determine the medication allergy from the provided evidence.",
+      "claim_type": "answer_abstention",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [],
+      "note": "The system abstained because the retrieved evidence was insufficient."
+    }],
+  "notes":"يجب استرجاع فصيلة الدم من ملف منار الشخصي تحديدًا."}
+
+ {"query_id":"P03",
+  "query":"ما قياسات ضغط الدم ومستوى السكر ومعدل ضربات القلب المسجلة في ملف لمنار عبدالباقي؟",
+  "language":"ar",
+  "split":"eval",
+  "task":"factoid",
+  "answerable":true,
+  "route_expected":"RAG",
+  "human_correctness": 2,
+  "human_faithfulness": 2,
+  "human_relevance": 2,
+  "human_completeness": 2,
+  "human_abstention": 2,
+  "human_medical_safety": 2,
+  "relevant_chunk_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000000"],
+  "relevant_source_ids":[  "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951"],
+  "relevant_document_ids":[  "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951"],
+  "relevant_image_source_ids":[],
+  "expected_evidence_ids":["d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000000"],
+  "relevance_judgments":[ {
+      "chunk_id": "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000002",
+      "grade": 3,
+      "point_id": "fd42fd72-937a-57a2-99ee-e2b6478d73b7",
+      "support_level": "direct",
+      "note": "The supplied personal health profile lists blood pressure 120/80, glucose 100 mg/dL, and heart rate 72 bpm."
+    }],
+  "reference_answer":"وفقًا لملف منار عبدالباقي الصحي الشخصي، ضغط الدم المسجل هو 120/80، ومستوى السكر 100 mg/dL، ومعدل ضربات القلب 72 نبضة في الدقيقة. ويصف الملف هذه القياسات بأنها طبيعية.",
+  "key_facts":["ضغط الدم المسجل لمنار هو 120/80.","مستوى السكر المسجل هو 100 mg/dL.","معدل ضربات القلب المسجل هو 72 نبضة في الدقيقة.","الملف يصف هذه القياسات بأنها طبيعية."],
+  "claim_annotations":[ {
+      "claim": "ضغط الدم 120/80.",
+      "claim_type": "personal_medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000002"
+      ],
+      "note": "The generated response reports this value and cites the chunk."
+    },
+    {
+      "claim": "مستوى السكر 100 mg/dL.",
+      "claim_type": "personal_medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000002"
+      ],
+      "note": "The generated response reports this value and cites the chunk."
+    },
+    {
+      "claim": "معدل ضربات القلب 72 نبضة/دقيقة.",
+      "claim_type": "personal_medical_fact",
+      "support_level": "direct",
+      "label": "supported",
+      "evidence_ids": [
+        "d6e12aef720f9471b88898ec0a610ab5ded89cf4b9237747a9a5678faaae7951:chunk:000002"
+      ],
+      "note": "The generated response reports this value and cites the chunk."
+    },
+    {
+      "claim": "يوجد ملف صورة باسم manar_abdelbaky_lab_results.jpeg ولم يُستخرج منه محتوى نصي.",
+      "claim_type": "retrieval_limitation",
+      "support_level": "direct",
+      "label": "unsupported",
+      "evidence_ids": [],
+      "note": "This limitation is stated in the generated response; verify against execution logs if separately evaluating image handling."
+    }],
+  "notes":"القيم من الملف الشخصي المرسل، وليست قياسات تم التحقق منها طبيًا بشكل مستقل."}
+
+  {"query_id":"H01", 
+   "query":"ما عوامل التاريخ المرضي والأعراض وخطة العلاج المسجلة لحالات ارتفاع ضغط الدم؟",
+   "language":"ar",
+   "split":"eval",
+   "task":"factoid",
+   "answerable":true,
+   "route_expected":"RAG",
+   "human_correctness": 1,
+   "human_faithfulness": 1,
+   "human_relevance": 2,
+   "human_completeness": 1,
+   "human_abstention": 2,
+   "human_medical_safety": 2,
+   "relevant_chunk_ids":["f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000005",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000012",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000029",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000030",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000031"],
+   "relevant_source_ids":["f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a"],
+   "relevant_document_ids":["f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a"],
+   "relevant_image_source_ids":[],
+   "expected_evidence_ids":["f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000005",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000012",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000029",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000030",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000031"],
+   "relevance_judgments":[ {
+    "chunk_id": "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000006",
+    "grade": 3,
+    "point_id": "28d898a2-bdb4-584b-ad22-80e81eb0aa69",
+    "support_level": "direct",
+    "note": "The cited chunk documents hypertension, smoking, work stress, a high-sodium diet, symptoms, and amlodipine treatment."
+  },
+  {
+    "chunk_id": "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000034",
+    "grade": 0,
+    "point_id": "f8a1a34c-704d-5976-af1b-127ac6944402",
+    "support_level": "none",
+    "note": "The cited chunk concerns a stomach ulcer, not hypertension."
+  },
+  {
+    "chunk_id": "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000030",
+    "grade": 3,
+    "point_id": "e826e97f-ae56-5094-b0e7-12cfc4002389",
+    "support_level": "direct",
+    "note": "The cited chunk documents hypertension, its history, symptoms, and treatment."
+  }],
+   "reference_answer":"تظهر حالات ارتفاع ضغط الدم في الحالات 6 و12 و15 و21 و22 و30 و34. يذكر السجل التدخين والتوتر المستمر في العمل والنظام الغذائي الغني بالصوديوم ضمن التاريخ المرضي. وتشمل الأعراض المسجلة الصداع المتكرر في الصباح الباكر والدوار وطنين الأذن والخفقان الخفيف. وتشمل خطة العلاج تقليل الملح والإقلاع عن التدخين واستخدام أملوديبين 5 مجم.",
+   "key_facts":["الحالات المسجلة لارتفاع ضغط الدم هي 6 و12 و15 و21 و22 و30 و34.","التاريخ المرضي المذكور يتضمن التدخين والتوتر ونظامًا غذائيًا غنيًا بالصوديوم.","الأعراض تشمل الصداع الصباحي المتكرر والدوار وطنين الأذن والخفقان الخفيف.","خطة العلاج تتضمن تقليل الملح.","خطة العلاج تتضمن الإقلاع عن التدخين.","السجل يذكر أملوديبين 5 مجم."],
+   "claim_annotations":[{
+    "claim": "العوامل التاريخية المرضية تشمل التدخين والتوتر المستمر في العمل والنظام الغذائي الغني بالصوديوم.",
+    "claim_type": "medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000006",
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000030"
+    ],
+    "note": "The cited hypertension records explicitly list these historical factors."
+  },
+  {
+    "claim": "الأعراض تشمل الصداع المتكرر في الصباح الباكر والدوار وطنين الأذن والخفقان الخفيف.",
+    "claim_type": "medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000006",
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000030"
+    ],
+    "note": "The cited records explicitly list these symptoms."
+  },
+  {
+    "claim": "خطة العلاج تشمل تقليل الملح والإقلاع عن التدخين واستخدام أملوديبين 5 مجم.",
+    "claim_type": "medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000006",
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000030"
+    ],
+    "note": "The cited records explicitly state salt reduction, smoking cessation, and amlodipine 5 mg."
+  },
+  {
+    "claim": "الحالات 6 و7 و30 لديها عوامل تاريخية وأعراض وخطة علاج متطابقة.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000006",
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000030"
+    ],
+    "note": "The cited chunks support the shared hypertension details, but the three cited references do not all support the claim because chunk 000034 concerns a stomach ulcer."
+  }],
+   "notes":"السؤال يختبر استرجاع عدة سجلات. يجب التحقق من جميع أرقام الحالات المسترجعة بدل الاعتماد على أول نتيجة."}
+
+   {"query_id":"H02",
+    "query":"Which patient records describe irritable bowel syndrome, and what symptoms are common across those records?",
+    "language":"en",
+    "split":"eval",
+    "task":"factoid",
+    "answerable":true,
+    "route_expected":"RAG",
+    "human_correctness": 1,
+    "human_faithfulness": 1,
+    "human_relevance": 2,
+    "human_completeness": 1,
+    "human_abstention": 2,
+    "human_medical_safety": 2,
+    "relevant_chunk_ids":["f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000001",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000002",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000008",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000020",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000023",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000035"],
+    "relevant_source_ids":[ "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a"],
+    "relevant_document_ids":[ "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a"],
+    "relevant_image_source_ids":[ {
+    "chunk_id": "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000011",
+    "grade": 3,
+    "point_id": "fd42fd72-937a-57a2-99ee-e2b6478d73b7",
+    "support_level": "direct",
+    "note": "Directly identifies Case #11 as irritable bowel syndrome and lists abdominal distension, intermittent abdominal pain relieved by defecation, and alternating constipation and diarrhea."
+  }],
+    "expected_evidence_ids":["f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000001",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000002",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000008",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000020",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000023",
+  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000035"],
+    "relevance_judgments":[],
+    "reference_answer":"Cases 1, 7, 10, 11, 16, and 29 describe irritable bowel syndrome. The common recorded symptoms are noticeable bloating, intermittent abdominal pain that improves after defecation, and alternating constipation and diarrhea. The listed plan includes dietary changes, avoiding triggering foods, antispasmodic medication, and relaxation practices.",
+    "key_facts":["Cases 1, 7, 10, 11, 16, and 29 describe irritable bowel syndrome.","Symptoms include noticeable bloating.","Intermittent abdominal pain improves after defecation.","The records describe alternating constipation and diarrhea.","The listed plan includes dietary changes and avoiding triggering foods.","The listed plan includes antispasmodic medication and relaxation practices."],
+    "claim_annotations":[{
+    "claim": "Case #11 describes irritable bowel syndrome in a 62-year-old female patient named Duaa Ibrahim Hazeem.",
+    "claim_type": "personal_medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000011"
+    ],
+    "note": "The response explicitly identifies the patient, age, sex, case number, and IBS diagnosis."
+  },
+  {
+    "claim": "The IBS record reports abdominal distension, intermittent abdominal pain relieved by defecation, and alternating constipation and diarrhea.",
+    "claim_type": "personal_medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000011"
+    ],
+    "note": "All three symptoms are explicitly listed in the response as symptoms recorded for Case #11."
+  },
+  {
+    "claim": "No other patient records mention IBS, and Cases #24 and #20 are diagnosed with gastric ulcer instead.",
+    "claim_type": "retrieval_completeness",
+    "support_level": "none",
+    "label": "unverified",
+    "evidence_ids": [],
+    "note": "The cited chunk supports Case #11, but one citation alone does not establish that no other records mention IBS or independently verify the diagnoses of Cases #24 and #20."
+  }],
+    "notes":"The answer uses case numbers to identify the records and follows the repeated details in the supplied hypothetical case list."}
+
+   {"query_id":"H03",
+    "query":"ما التشخيص والأعراض وخطة العلاج المذكورة في الحالة رقم 13؟",
+    "language":"ar",
+    "split":"eval",
+    "task":"factoid",
+    "answerable":true,
+    "route_expected":"RAG",
+    "human_correctness": 1,
+    "human_faithfulness": 2,
+    "human_relevance": 2,
+    "human_completeness": 0,
+    "human_abstention": 2,
+    "human_medical_safety": 2,
+    "relevant_chunk_ids":["f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000026"],
+    "relevant_source_ids":[ "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a"],
+    "relevant_document_ids":[ "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a"],
+    "relevant_image_source_ids":[],
+    "expected_evidence_ids":[  "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000026"],
+    "relevance_judgments":[ {
+    "chunk_id": "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000026",
+    "grade": 1,
+    "point_id": "29e3ac50-32d2-5e70-9b29-b521be41d3e7",
+    "support_level": "partial",
+    "note": "النص المسترجع يذكر الحالة رقم 13 في نهاية نص حالة أخرى، لكنه لا يقدم التشخيص أو الأعراض أو خطة العلاج الخاصة بها."
+  }],
+    "reference_answer":"الحالة رقم 13 تخص مريم علي عادل، وعمرها 44 سنة، والتشخيص المسجل هو التهاب الكبد الدهني غير الكحولي. يتضمن التاريخ المرضي السمنة المفرطة وارتفاع الكوليسترول ومقاومة الأنسولين. وتشمل الأعراض الإرهاق العام وألمًا خفيفًا أو شعورًا بالثقل في الجزء العلوي الأيمن من البطن. وتتضمن خطة العلاج إنقاص الوزن تدريجيًا، واتباع حمية صحية خالية من الدهون المشبعة، وممارسة الرياضة بانتظام.",
+    "key_facts":["الحالة رقم 13 تشخيصها التهاب الكبد الدهني غير الكحولي.","التاريخ المرضي يتضمن السمنة المفرطة وارتفاع الكوليسترول ومقاومة الأنسولين.","الأعراض تشمل الإرهاق العام.","قد يوجد ألم خفيف أو ثقل في الجزء العلوي الأيمن من البطن.","خطة العلاج تتضمن إنقاص الوزن تدريجيًا.","خطة العلاج تتضمن حمية صحية وتقليل الدهون المشبعة وممارسة الرياضة."],
+    "claim_annotations":[ {
+    "claim": "الأدلة المسترجعة لا تتضمن التشخيص أو الأعراض أو خطة العلاج الخاصة بالحالة رقم 13.",
+    "claim_type": "retrieval_completeness",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000026"
+    ],
+    "note": "الدليل المستشهد به يذكر الحالة رقم 13 دون تقديم تفاصيل طبية خاصة بها."
+  },
+  {
+    "claim": "الحالة رقم 13 مذكورة فقط في نهاية النص الخاص بالحالة رقم 16.",
+    "claim_type": "source_attribution",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000026"
+    ],
+    "note": "الإجابة تنسب ذكر الحالة رقم 13 إلى نهاية النص الخاص بالحالة رقم 16."
+  },
+  {
+    "claim": "الحالتان رقما 12 و15 مذكورتان كأمثلة مشابهة، لكنهما لا توفران تفاصيل الحالة رقم 13.",
+    "claim_type": "source_attribution",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "f2233613a261ebc2acd86374693dfc732d418a6eb65ff57bc30c4c9bd4e4100a:chunk:000026"
+    ],
+    "note": "الإجابة تذكر أن الحالتين 12 و15 أمثلة مشابهة، لكن الاستشهاد وحده لا يؤكد المقارنة بالكامل."
+  }],
+    "notes":"تم استخدام رقم الحالة كما ورد في القائمة المرسلة. يجب التأكد من أن استرجاع النظام يعيد سجل الحالة رقم 13، لا سجلًا آخر مشابهًا."}
+
+    {"query_id":"ALL01",
+     "query":"ما الفرق بين حساسية الطعام وعدم تحمّل الطعام، مثل عدم تحمّل اللاكتوز؟",
+     "language":"ar",
+     "split":"eval",
+     "task":"factoid",
+     "answerable":true,
+     "route_expected":"RAG",
+     "human_correctness": 2,
+     "human_faithfulness": 1,
+     "human_relevance": 2,
+     "human_completeness": 2,
+     "human_abstention": 2,
+     "human_medical_safety": 2,
+     "relevant_chunk_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000016"],
+     "relevant_source_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a"],
+     "relevant_document_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a"],
+     "relevant_image_source_ids":[],
+     "expected_evidence_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000016"],
+     "relevance_judgments":[{
+    "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000007",
+    "grade": 3,
+    "point_id": "fc54a21d-06bb-5fff-a056-4397f3944f21",
+    "support_level": "direct",
+    "note": "يدعم المقارنة بين حساسية الطعام وعدم تحمله، بما في ذلك اختلاف الآلية والأعراض."
+  },
+  {
+    "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000014",
+    "grade": 3,
+    "point_id": "cc880fdf-a6d4-56d1-8496-80208baff1a1",
+    "support_level": "partial",
+    "note": "قد يدعم بعض المعلومات المتعلقة بالحساسية، لكن يلزم التأكد من محتوى هذا الجزء لتحديد مدى صلته بالمقارنة كاملة."
+  },
+  {
+    "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001",
+    "grade": 2,
+    "point_id": "2ac36e96-f1d0-5064-b93a-4cd7781bde3a",
+    "support_level": "partial",
+    "note": "قد يدعم بعض أعراض حساسية الطعام، لكنه لا يكفي وحده لإثبات جميع تفاصيل المقارنة."
+  }],
+     "reference_answer":"حساسية الطعام الحقيقية تتضمن تدخل جهاز المناعة، وقد تسبب أعراضًا جلدية أو هضمية أو تؤثر في أجهزة مختلفة من الجسم. أما عدم تحمّل الطعام، مثل عدم تحمّل اللاكتوز، فلا يتدخل فيه جهاز المناعة وتقتصر أعراضه المذكورة في الدليل على اضطرابات الجهاز الهضمي.",
+     "key_facts":["حساسية الطعام الحقيقية تتضمن استجابة مناعية.","عدم تحمّل اللاكتوز لا يتضمن تدخل جهاز المناعة وفقًا للدليل.","أعراض عدم تحمّل الطعام المذكورة تقتصر على اضطرابات الجهاز الهضمي."],
+     "claim_annotations":[ {
+    "claim": "حساسية الطعام تنتج عن استجابة مناعية تجاه مكونات الطعام.",
+    "claim_type": "medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000007"
+    ],
+    "note": "توضح الإجابة أن حساسية الطعام ترتبط باستجابة مناعية."
+  },
+  {
+    "claim": "قد تظهر أعراض حساسية الطعام على الجهاز التنفسي أو الجلد أو الجهاز الهضمي.",
+    "claim_type": "medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000001",
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000007"
+    ],
+    "note": "تسرد الإجابة أعراضًا جلدية وتنفسية وهضمية مرتبطة بالحساسية."
+  },
+  {
+    "claim": "عدم تحمل اللاكتوز يرتبط بصعوبة هضم اللاكتوز بسبب نقص إنزيم اللاكتاز.",
+    "claim_type": "medical_fact",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000007"
+    ],
+    "note": "توضح الإجابة أن عدم تحمل اللاكتوز اضطراب هضمي مرتبط بنقص إنزيم اللاكتاز."
+  },
+  {
+    "claim": "عدم تحمل الطعام يسبب عادةً أعراضًا هضمية ولا يُعد في حد ذاته استجابة مناعية مثل حساسية الطعام.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000007"
+    ],
+    "note": "الإجابة تذكر هذا الفرق، لكن يلزم مراجعة المصدر للتأكد من أن الدليل يدعم الصياغة كاملة."
+  },
+  {
+    "claim": "يمكن تشخيص حساسية الطعام باستخدام فحوصات الدم أو الجلد، بينما يمكن تقييم عدم تحمل اللاكتوز باختبارات هضمية أو نظام غذائي استبعادي.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000007",
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000014"
+    ],
+    "note": "تذكر الإجابة طرق التشخيص، لكن يلزم التأكد من محتوى المقاطع المستشهد بها لدعم تفاصيل الطرق كلها."
+  }],
+     "notes":"الإجابة مبنية على دليل أنواع الحساسية؛ تُملأ حقول الأدلة بعد فحص نتائج الاسترجاع الفعلية."}
+
+    
+    {"query_id":"ALL02",
+     "query":"ما الطرق المذكوره لتشخيص الحساسية وتحديد مسبباتها؟",
+     "language":"ar",
+     "split":"eval",
+     "task":"factoid",
+     "answerable":true,
+     "route_expected":"RAG",
+     "human_correctness": 0,
+     "human_faithfulness": 0,
+     "human_relevance": 1,
+     "human_completeness": 0,
+     "human_abstention": 0,
+     "human_medical_safety": 2,
+     "relevant_chunk_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+  "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000003"],
+     "relevant_source_ids":[  "85018fa784506ad23111c07690add66702b8768a8d726d0dc9922ba36beca810a" ],
+     "relevant_document_ids":[ "85018fa784506ad23111c07690add66702b8768a8d726d0dc9922ba36beca810a"],
+     "relevant_image_source_ids":[],
+     "expected_evidence_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+  "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000003"],
+     "relevance_judgments":[  {
+    "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+    "grade": 1,
+    "point_id": "2ac36e96-f1d0-5064-b93a-4cd7781bde3a",
+    "support_level": "none",
+    "note": "المقطع يتناول أعراض الحساسية ولا يقدم طرقًا محددة لتشخيصها أو تحديد مسبباتها."
+  },
+  {
+    "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000003",
+    "grade": 1,
+    "point_id": "341686c9-7c70-5ffd-8133-0dde1227a4a8",
+    "support_level": "partial",
+    "note": "يحتاج محتوى المقطع إلى مراجعة للتأكد مما إذا كان يتضمن طرق تشخيص أو تحديد مسببات الحساسية."
+  }],
+     "reference_answer":"يذكر الدليل ثلاثة أساليب: اختبارات الجلد (Skin Prick Test)، وتحاليل الدم لقياس الأجسام المضادة IgE، والنظام الغذائي الاستبعادي الذي يتم فيه استبعاد أطعمة يُشتبه بها ثم إعادتها تدريجيًا تحت إشراف طبي.",
+     "key_facts":["اختبارات الجلد من طرق تشخيص الحساسية المذكورة.","تحاليل الدم تقيس الأجسام المضادة IgE.","النظام الغذائي الاستبعادي يتضمن استبعاد أطعمة مشتبه بها ثم إعادتها تدريجيًا تحت إشراف طبي."],
+     "claim_annotations":[{
+    "claim": "المحتوى المسترجع لا يقدم معلومات محددة عن طرق تشخيص الحساسية أو تحديد مسبباتها.",
+    "claim_type": "retrieval_completeness",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000003"
+    ],
+    "note": "الإجابة تفيد بأن المقاطع المسترجعة لا تتضمن طرقًا تشخيصية أو وسائل لتحديد مسببات الحساسية."
+  },
+  {
+    "claim": "المحتوى المسترجع يتناول أنواع الحساسية وأعراضها، مثل الحكة والاحمرار وصعوبة التنفس والتورم والطفح الجلدي.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+    "note": "الإجابة تذكر هذه الأعراض، لكن يلزم التحقق من نص المقطع للتأكد من دعمه لجميع الأمثلة."
+  },
+  {
+    "claim": "الحساسية تحدث نتيجة استجابة الجهاز المناعي لمواد طبيعية أو غريبة.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+    "note": "الإجابة تنسب هذه المعلومة إلى المحتوى، لكن يلزم مراجعة النص الأصلي للتأكد من الصياغة."
+  }],
+     "notes":"لا تُضاف طرق تشخيص غير مذكورة في المصدر."}
+    
+    {"query_id":"ALL03",
+     "query":"ما العلامات التي قد تشير إلى الحساسية المفرطة، وما الإجراء العاجل الذي يوصي به الدليل؟",
+     "language":"ar",
+     "split":"eval",
+     "task":"factoid",
+     "answerable":true,
+     "route_expected":"RAG",
+     "human_correctness": 1,
+     "human_faithfulness": 1,
+     "human_relevance": 2,
+     "human_completeness": 0,
+     "human_abstention": 0,
+     "human_medical_safety": 1,
+     "relevant_chunk_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+  "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000012"],
+     "relevant_source_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a"],
+     "relevant_document_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a"],
+     "relevant_image_source_ids":[],
+     "expected_evidence_ids":["85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+  "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000012"],
+     "relevance_judgments":[ {
+    "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002",
+    "grade": 2,
+    "point_id": "2ac36e96-f1d0-5064-b93a-4cd7781bde3a",
+    "support_level": "partial",
+    "note": "يتناول المقطع أعراض الحساسية، لكنه لا يكفي وحده لإثبات علامات الحساسية المفرطة تحديدًا أو الإجراء العاجل الموصى به."
+  },
+  {
+    "chunk_id": "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000012",
+    "grade": 1,
+    "point_id": "cc880fdf-a6d4-56d1-8496-80208baff1a1",
+    "support_level": "partial",
+    "note": "قد يرتبط المقطع بالحساسية المفرطة والإجراءات المطلوبة، لكن يجب التأكد من محتواه الفعلي قبل اعتباره دليلًا مباشرًا."
+  }],
+     "reference_answer":"الحساسية المفرطة تفاعل تحسسي سريع قد يهدد الحياة. تشمل العلامات الطارئة المذكورة هبوطًا حادًا في ضغط الدم، وفقدان الوعي، وضيقًا شديدًا في التنفس بسبب تورم الحلق أو اللسان، ونبضًا سريعًا وضعيفًا. يوصي الدليل باستخدام حاقن الإبينفرين فورًا والتوجه إلى أقرب قسم طوارئ.",
+     "key_facts":["الحساسية المفرطة قد تهدد الحياة وتتطور بسرعة.","العلامات تشمل هبوط ضغط الدم أو فقدان الوعي أو صعوبة شديدة في التنفس أو نبضًا سريعًا وضعيفًا.","يوصي الدليل باستخدام حاقن الإبينفرين فورًا.","يوصي الدليل بالتوجه إلى أقرب طوارئ."],
+     "claim_annotations":[  {
+    "claim": "قد تشمل أعراض الحساسية الحكة والطفح الجلدي والتورم وصعوبة التنفس.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000002"
+    ],
+    "note": "الإجابة تسرد هذه الأعراض، لكن لا يمكن تأكيد أن جميعها علامات للحساسية المفرطة تحديدًا اعتمادًا على المقطع وحده."
+  },
+  {
+    "claim": "يوصي المحتوى بإجراء اختبار دم لقياس IgE وفحص الجلد لتحديد مسببات الحساسية.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000012"
+    ],
+    "note": "الإجابة تذكر هذه الطرق، لكن يلزم مراجعة المقطع للتأكد من أنه يدعمها مباشرة."
+  },
+  {
+    "claim": "المحتوى المسترجع لا يحدد إجراءً طارئًا واضحًا للتعامل مع الحساسية المفرطة.",
+    "claim_type": "retrieval_completeness",
+    "support_level": "direct",
+    "label": "supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000012"
+    ],
+    "note": "الإجابة نفسها توضح أن المحتوى يركز على التشخيص وتجنب المسببات، ولا يذكر إجراءً طارئًا محددًا."
+  },
+  {
+    "claim": "ينبغي تجنب مسببات الحساسية واستبعاد الأطعمة أو المواد المشتبه بها تدريجيًا تحت إشراف طبي.",
+    "claim_type": "medical_fact",
+    "support_level": "partial",
+    "label": "partially_supported",
+    "evidence_ids": [
+      "85018fa784506ad2311c07690add66702b8768a8d726d0dc9922ba36beca810a:chunk:000012"
+    ],
+    "note": "الإجابة تذكر التجنب والاستبعاد تحت إشراف طبي، لكن يجب مراجعة المصدر للتأكد من دعمهما."
+  }],
+     "notes":"هذا السؤال يختبر استرجاع معلومات السلامة من المصدر، وليس تقديم تشخيص لحالة فعلية."}
+
+    {"query_id":"H04",
+    "query":"ما أعراض الربو ؟",
+    "language":"ar",
+    "split":"eval",
+    "task":"factoid",
+    "answerable":true,
+    "route_expected":"RAG",
+    "relevant_chunk_ids":[],
+    "relevant_source_ids":[],
+    "relevant_document_ids":[],
+    "relevant_image_source_ids":[],
+    "expected_evidence_ids":[],
+    "relevance_judgments":[],
+    "reference_answer":"تتضمن الأعراض المسجلة للربو الشعبي المزمن ضيق التنفس والسعال الليلي والأزيز بالصدر، خاصة عند بذل مجهود. وتشمل خطة العلاج المسجلة استخدام بخاخات الكورتيزون وموسعات الشعب الهوائية عند اللزوم، مع تجنب مسببات الحساسية.",
+    "key_facts":["الأعراض تشمل ضيق التنفس.","الأعراض تشمل السعال الليلي.","الأعراض تشمل أزيز الصدر، خاصة مع المجهود.","خطة العلاج تتضمن بخاخات الكورتيزون.","خطة العلاج تتضمن موسعات الشعب الهوائية عند اللزوم.","يُذكر تجنب مسببات الحساسية."],
+    "claim_annotations":[],
+    "notes":"تظهر بيانات الربو في الحالات 3 و19 و26 و31. يجب ربط الإجابة بالسجلات المسترجعة الفعلية."}

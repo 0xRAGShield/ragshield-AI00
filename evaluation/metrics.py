@@ -5,6 +5,15 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from common import (
+    HUMAN_RATING_FIELDS,
+    HUMAN_RATING_MAX,
+    HUMAN_RATING_PRECEDENCE,
+    HUMAN_RATING_SCALE,
+    human_annotation_status,
+    parse_human_rating,
+)
+
 EXCLUSION_UNLABELED_CHUNKS = "unlabeled_no_relevant_chunk_ids"
 EXCLUSION_NO_REFERENCE = "unlabeled_no_reference_answer"
 EXCLUSION_NO_CLAIMS = "unlabeled_no_claim_annotations"
@@ -286,6 +295,60 @@ def query_answer_overlap(query: str | None, answer: str | None) -> float | None:
     if not q_tokens or not a_tokens:
         return None
     return sum(t in a_tokens for t in q_tokens) / len(q_tokens)
+
+
+def human_dimension_stats(
+    records: Sequence[Mapping[str, Any]],
+    field: str,
+) -> dict[str, float | int | None]:
+    values: list[int] = []
+    missing = 0
+    for row in records:
+        parsed = parse_human_rating(
+            field,
+            row.get(field),
+            query_id=None if row.get("query_id") is None else str(row.get("query_id")),
+        )
+        if parsed is None:
+            missing += 1
+        else:
+            values.append(parsed)
+    mean = (sum(values) / len(values)) if values else None
+    normalized_pct = None if mean is None else (mean / HUMAN_RATING_MAX) * 100.0
+    return {
+        "mean": mean,
+        "n": len(values),
+        "n_missing": missing,
+        "normalized_pct": normalized_pct,
+    }
+
+
+def human_rating_aggregates(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    status = human_annotation_status(list(records))
+    by_dimension: dict[str, dict[str, float | int | None]] = {}
+    payload: dict[str, Any] = {
+        "human_metrics_filled": status["human_metrics_filled"],
+        "n_fully_annotated": status["n_fully_annotated"],
+        "n_partial": status["n_partial"],
+        "n_unannotated": status["n_unannotated"],
+        "human_annotation_status": status,
+        "human_rating_scale": HUMAN_RATING_SCALE,
+        "human_rating_precedence": list(HUMAN_RATING_PRECEDENCE),
+        "human_normalized_pct_note": (
+            "normalized_pct is (mean / 2) * 100, a descriptive rescaling of the "
+            "0-2 human ordinal scale. It is not clinical accuracy and is not an "
+            "automated lexical metric."
+        ),
+    }
+    for field in HUMAN_RATING_FIELDS:
+        stats = human_dimension_stats(records, field)
+        by_dimension[field] = stats
+        payload[f"{field}_mean"] = stats["mean"]
+        payload[f"{field}_n"] = stats["n"]
+        payload[f"{field}_n_missing"] = stats["n_missing"]
+        payload[f"{field}_normalized_pct"] = stats["normalized_pct"]
+    payload["by_dimension"] = by_dimension
+    return payload
 
 
 def key_fact_coverage(answer: str | None, key_facts: Sequence[str] | None) -> float | None:

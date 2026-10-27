@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common import gold_chunk_ids, load_jsonl, validate_row
+from common import HUMAN_RATING_FIELDS, gold_chunk_ids, load_jsonl, validate_row
 from validate_dataset import build_report
 
 TEMPLATE = Path(__file__).resolve().parents[1] / "datasets" / "evaluation_template.jsonl"
@@ -15,7 +15,27 @@ SYNTHETIC = Path(__file__).resolve().parents[1] / "datasets" / "synthetic_eval.j
 
 def test_template_loads_without_inventing_unlabelled_as_empty_gold():
     rows = load_jsonl(TEMPLATE)
-    assert len(rows) == 5
+    assert [row["query_id"] for row in rows] == [
+        "A01",
+        "A02",
+        "D01",
+        "D02",
+        "D03",
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "P01",
+        "P02",
+        "P03",
+        "H01",
+        "H02",
+        "H03",
+        "ALL01",
+        "ALL02",
+        "ALL03",
+    ]
     gold_map = {row["query_id"]: gold_chunk_ids(row) for row in rows}
     for qid in ("A01", "A02", "D01", "D02", "D03"):
         assert gold_map[qid], qid
@@ -29,7 +49,11 @@ def test_template_loads_without_inventing_unlabelled_as_empty_gold():
         assert row.get("notes")
         assert row.get("reference_answer")
         assert row.get("key_facts")
-        for claim in row.get("claim_annotations") or []:
+        for field in HUMAN_RATING_FIELDS:
+            assert row.get(field) in (0, 1, 2), (row["query_id"], field, row.get(field))
+    for qid in ("A01", "A02", "D01", "D02", "D03"):
+        for claim in by_id[qid].get("claim_annotations") or []:
+            assert isinstance(claim, dict), qid
             assert claim.get("label") in {
                 "supported",
                 "unsupported",

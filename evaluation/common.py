@@ -78,6 +78,17 @@ HUMAN_RATING_SCALE = {
     },
 }
 
+HUMAN_RATING_FIELDS = tuple(HUMAN_RATING_SCALE)
+HUMAN_RATING_MAX = 2
+# Dataset JSONL is the primary source. A review file is an optional non-null
+# override when configured or present. Existing per_query.jsonl only fills
+# remaining nulls. Null never replaces a valid 0/1/2 score.
+HUMAN_RATING_PRECEDENCE = (
+    "review",
+    "dataset",
+    "existing_per_query",
+)
+
 _SECRET_KEY_BITS = ("key", "token", "secret", "password", "credential")
 
 
@@ -118,12 +129,10 @@ def resolve_path(value: str | Path) -> Path:
     return repo_root() / path
 
 
-def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Load evaluation records without rewriting the file.
+def iter_json_objects(path: Path) -> list[dict[str, Any]]:
+    """Parse JSON objects from JSONL or pretty-printed files with `#` comments.
 
-    Supports one-object-per-line JSONL and pretty-printed JSON objects
-    separated by whitespace. Lines that are empty or start with `#` are
-    ignored so annotated dataset files remain valid.
+    Does not rewrite the file and does not apply the evaluation dataset schema.
     """
     kept: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -151,9 +160,17 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
         record_no += 1
         if not isinstance(obj, dict):
             raise ValueError(f"{path} record {record_no} must be a JSON object")
-        validate_row(obj, line_no=record_no, path=path)
         rows.append(obj)
         idx = end
+    return rows
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Load evaluation dataset records without rewriting the file."""
+    rows: list[dict[str, Any]] = []
+    for record_no, obj in enumerate(iter_json_objects(path), start=1):
+        validate_row(obj, line_no=record_no, path=path)
+        rows.append(obj)
     return rows
 
 
@@ -215,13 +232,153 @@ def expected_route_label(row: dict[str, Any]) -> str | None:
     return None
 
 
+def parse_human_rating(
+    field: str,
+    value: Any,
+    *,
+    query_id: str | None = None,
+    source: str | None = None,
+) -> int | None:
+    if field not in HUMAN_RATING_SCALE:
+        raise ValueError(f"Unknown human rating field {field!r}")
+    if value is None:
+        return None
+    allowed = tuple(HUMAN_RATING_SCALE[field])
+    if type(value) is not int or value not in allowed:
+        loc = []
+        if query_id is not None:
+            loc.append(f"query_id={query_id}")
+        if source is not None:
+            loc.append(f"source={source}")
+        where = f" ({', '.join(loc)})" if loc else ""
+        raise ValueError(
+            f"Invalid {field}={value!r}{where}; expected null or integer "
+            f"0, 1, or 2 on the 0-{HUMAN_RATING_MAX} human rating scale."
+        )
+    return value
+
+
+def extract_human_ratings(
+    row: dict[str, Any] | None,
+    *,
+    query_id: str | None = None,
+    source: str | None = None,
+) -> dict[str, int | None]:
+    if not row:
+        return {field: None for field in HUMAN_RATING_FIELDS}
+    qid = query_id if query_id is not None else row.get("query_id")
+    return {
+        field: parse_human_rating(
+            field, row.get(field), query_id=None if qid is None else str(qid), source=source
+        )
+        for field in HUMAN_RATING_FIELDS
+    }
+
+
+def human_ratings_from_row(row: dict[str, Any]) -> dict[str, int | None]:
+    return extract_human_ratings(row, query_id=row.get("query_id"), source="dataset")
+
+
+def merge_human_ratings(
+    sources: list[tuple[str, dict[str, Any] | None]],
+    *,
+    query_id: str | None = None,
+) -> tuple[dict[str, int | None], dict[str, str | None]]:
+    """Merge rating maps. `sources` is highest-precedence first.
+
+    A non-null value is never replaced by null or by a later source.
+    """
+    values: dict[str, int | None] = {field: None for field in HUMAN_RATING_FIELDS}
+    origins: dict[str, str | None] = {field: None for field in HUMAN_RATING_FIELDS}
+    for source_name, blob in sources:
+        extracted = extract_human_ratings(blob, query_id=query_id, source=source_name)
+        for field, value in extracted.items():
+            if values[field] is None and value is not None:
+                values[field] = value
+                origins[field] = source_name
+    return values, origins
+
+
+def load_human_rating_index(
+    path: Path | None,
+    *,
+    source: str,
+) -> dict[str, dict[str, Any]]:
+    if path is None:
+        return {}
+    if not path.is_file():
+        raise FileNotFoundError(f"{source} file not found: {path}")
+    index: dict[str, dict[str, Any]] = {}
+    for record_no, obj in enumerate(iter_json_objects(path), start=1):
+        qid = obj.get("query_id")
+        if not isinstance(qid, str) or not qid.strip():
+            raise ValueError(f"{path} record {record_no} missing non-empty query_id")
+        qid = qid.strip()
+        extracted = extract_human_ratings(obj, query_id=qid, source=source)
+        if qid not in index:
+            index[qid] = {field: extracted[field] for field in HUMAN_RATING_FIELDS}
+            continue
+        for field, value in extracted.items():
+            if index[qid].get(field) is None and value is not None:
+                index[qid][field] = value
+    return index
+
+
+def resolve_human_review_path(config: dict[str, Any], output_dir: Path) -> Path | None:
+    raw = config.get("human_review_path")
+    if raw:
+        path = resolve_path(raw)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"human_review_path={path} does not exist. "
+                "Unset the config key to skip the review file."
+            )
+        return path
+    candidate = output_dir / "per_query_human_review.jsonl"
+    return candidate if candidate.is_file() else None
+
+
+def attach_human_ratings(
+    records: list[dict[str, Any]],
+    *,
+    dataset_by_id: dict[str, dict[str, Any]],
+    review_by_id: dict[str, dict[str, Any]] | None = None,
+    existing_by_id: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Join human ratings onto generation records by query_id.
+
+    Primary source is the dataset row. Optional review-file values override
+    only when non-null. Existing per_query.jsonl fills leftover nulls.
+    Fresh generated answers do not change ratings. This function does not
+    invent scores.
+    """
+    review_by_id = review_by_id or {}
+    existing_by_id = existing_by_id or {}
+    attached: list[dict[str, Any]] = []
+    for record in records:
+        qid = str(record["query_id"])
+        values, origins = merge_human_ratings(
+            [
+                ("review", review_by_id.get(qid)),
+                ("dataset", dataset_by_id.get(qid)),
+                ("existing_per_query", existing_by_id.get(qid)),
+            ],
+            query_id=qid,
+        )
+        merged = dict(record)
+        merged.update(values)
+        merged["human_rating_sources"] = origins
+        merged["human_rating_scale"] = HUMAN_RATING_SCALE
+        attached.append(merged)
+    return attached
+
+
 def human_annotation_status(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    fields = tuple(HUMAN_RATING_SCALE)
     filled = 0
     partial = 0
     empty = 0
     for row in rows:
-        present = [row.get(name) is not None for name in fields]
+        present = [row.get(name) is not None for name in HUMAN_RATING_FIELDS]
         if all(present):
             filled += 1
         elif any(present):
