@@ -49,3 +49,26 @@ def test_dataset_ground_truth_roundtrip(tmp_path: Path) -> None:
     assert Path(by_id["en_report_lowres_noisy"]["image_path"]).is_file()
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest["samples"]) == 7
+
+
+def test_failed_pages_count_as_fully_wrong_in_the_all_metrics() -> None:
+    samples = [{"id": "a", "text": "10 mg"}, {"id": "b", "text": "10 mg"}]
+    predictions = [
+        {"image_id": "a", "variant": "v", "status": "success", "text": "10 mg"},
+        {"image_id": "b", "variant": "v", "status": "error", "text": None},
+    ]
+    summary = score_predictions(samples, predictions).variants[0]
+    assert summary.cer == 0 and summary.cer_micro == 0  # successful items only
+    assert summary.cer_all == 0.5  # the unread page counts as 5/5 characters wrong
+    assert summary.wer_all == 0.5
+
+
+def test_micro_cer_weights_long_references_more_than_the_mean() -> None:
+    samples = [{"id": "short", "text": "ab"}, {"id": "long", "text": "x" * 98}]
+    predictions = [
+        {"image_id": "short", "variant": "v", "status": "success", "text": "zz"},  # 2/2 wrong
+        {"image_id": "long", "variant": "v", "status": "success", "text": "x" * 98},  # perfect
+    ]
+    summary = score_predictions(samples, predictions).variants[0]
+    assert summary.cer == 0.5  # mean of 1.0 and 0.0
+    assert summary.cer_micro == 0.02  # 2 wrong characters out of 100
