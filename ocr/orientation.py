@@ -43,12 +43,18 @@ def undo_rot90_point(x: float, y: float, k: int, rotated_width: int, rotated_hei
 
 
 def detect_orientation(gray: np.ndarray, ratio: float = 1.5) -> OrientationResult:
-    """Decide whether the text runs along rows (upright) or along columns (sideways)."""
+    """Decide whether the text runs along rows (upright) or along columns (sideways).
+
+    Text lines make the ink profile alternate between line and gap. That structure
+    is measured inside the occupied text block only (margins and empty halves of a
+    page say nothing about line direction) and after compensating for tilt, so a
+    slightly rotated page is not mistaken for a sideways one.
+    """
     binary = _ink(gray)
     if binary is None:
         return OrientationResult(0, False, False, 0.0, 0.0, ["too little ink to judge orientation"])
-    horizontal = _peakiness(binary.sum(axis=1))
-    vertical = _peakiness(binary.sum(axis=0))
+    horizontal = _line_structure(binary)
+    vertical = _line_structure(np.ascontiguousarray(binary.T))
     if vertical > ratio * max(horizontal, 1e-9):
         return OrientationResult(
             k90=1,
@@ -64,6 +70,37 @@ def detect_orientation(gray: np.ndarray, ratio: float = 1.5) -> OrientationResul
     return OrientationResult(0, False, False, horizontal, vertical)
 
 
+_TILT_ANGLES = tuple(range(-24, 25, 3))
+
+
+def _line_structure(binary: np.ndarray) -> float:
+    """Best row-profile line structure over small tilts (higher = clearer horizontal lines)."""
+    height, width = binary.shape
+    center = (width / 2.0, height / 2.0)
+    best = 0.0
+    for angle in _TILT_ANGLES:
+        if angle == 0:
+            rotated = binary
+        else:
+            matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+            rotated = cv2.warpAffine(binary, matrix, (width, height), flags=cv2.INTER_NEAREST)
+        best = max(best, _block_peakiness(rotated.sum(axis=1)))
+    return best
+
+
+def _block_peakiness(profile: np.ndarray) -> float:
+    """Squared coefficient of variation of the profile inside the occupied span."""
+    peak = float(profile.max())
+    if peak <= 0:
+        return 0.0
+    occupied = np.nonzero(profile > 0.02 * peak)[0]
+    if len(occupied) < 8:
+        return 0.0
+    block = profile[occupied[0] : occupied[-1] + 1]
+    mean = float(block.mean())
+    return float(block.var() / (mean * mean)) if mean > 0 else 0.0
+
+
 def _ink(gray: np.ndarray) -> np.ndarray | None:
     small = gray
     longest = max(gray.shape[:2])
@@ -72,15 +109,7 @@ def _ink(gray: np.ndarray) -> np.ndarray | None:
         small = cv2.resize(gray, (max(1, int(gray.shape[1] * factor)), max(1, int(gray.shape[0] * factor))), interpolation=cv2.INTER_AREA)
     blurred = cv2.GaussianBlur(small, (3, 3), 0)
     _threshold, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    ink = (binary > 0).astype(np.float64)
-    if ink.sum() < 40:
+    ink = (binary > 0).astype(np.uint8)
+    if int(ink.sum()) < 40:
         return None
     return ink
-
-
-def _peakiness(profile: np.ndarray) -> float:
-    """Squared coefficient of variation: large when ink is concentrated in bands."""
-    mean = float(profile.mean())
-    if mean <= 0:
-        return 0.0
-    return float(profile.var() / (mean * mean))

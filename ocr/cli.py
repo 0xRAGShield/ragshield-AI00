@@ -112,6 +112,22 @@ def main(argv: list[str] | None = None) -> int:
     _add_preprocess_flags(real)
     _add_model_flags(real)
 
+    triage = sub.add_parser(
+        "triage",
+        help="Diagnose why pages fail: input quality, line detection or recognition",
+    )
+    triage.add_argument("--input", type=Path, required=True, help="Folder of images (searched recursively)")
+    triage.add_argument("--out", type=Path, default=Path("outputs/triage"))
+    triage.add_argument(
+        "--run-ocr",
+        action="store_true",
+        help="Also run hybrid OCR (needs the model) to record confidence and CER against <image>.txt",
+    )
+    triage.add_argument("--hybrid-policy", default="qwen_default", choices=("english_line_heuristic", "qwen_default"))
+    triage.add_argument("--trocr-checkpoint", type=Path, default=None)
+    _add_preprocess_flags(triage)
+    _add_model_flags(triage)
+
     serve = sub.add_parser("serve", help="Local page for upload, variants, and OCR")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
@@ -287,6 +303,24 @@ def main(argv: list[str] | None = None) -> int:
         if report.blocker:
             return 2
         return 0 if report.failed == 0 else 1
+    if args.command == "triage":
+        from ocr.triage import run_triage
+
+        runner = None
+        if args.run_ocr:
+            from ocr.hybrid import HybridConfig, run_hybrid
+            from ocr.routing import RoutingConfig
+
+            qwen = HandwrittenOcrClient(_qwen_config(args))
+            trocr = _trocr_client_from_args(args)
+            hybrid_config = HybridConfig(
+                routing=RoutingConfig(policy=args.hybrid_policy), preprocess=_config_from_args(args)
+            )
+            runner = lambda image: run_hybrid(image, None, qwen, trocr, hybrid_config)  # noqa: E731
+        report = run_triage(args.input, args.out, preprocess=_config_from_args(args), runner=runner)
+        print(json.dumps({"images": len(report.rows), "buckets": report.counts(), "out": str(args.out)}, indent=2))
+        print(f"Summary: {args.out / 'triage_summary.md'}")
+        return 0
     if args.command == "serve":
         from ocr.server import serve
 

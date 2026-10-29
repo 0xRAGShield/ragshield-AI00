@@ -176,3 +176,41 @@ def test_geometry_without_optional_stages_matches_the_old_behaviour() -> None:
     _, geometry = apply_combined_preprocess(page, INFO, PreprocessConfig(enable_upscale=False, enable_deskew=False))
     assert geometry.rotation_k90 == 0 and geometry.page_homography is None
     assert geometry.map_processed_point_to_oriented(400, 500) == pytest.approx((400, 500), abs=1e-6)
+
+
+# ------------------------- regression: a tilted page must never be mistaken for a sideways one
+@pytest.mark.parametrize("tilt", [5.0, 14.0, -14.0, 25.0])
+def test_a_tilted_upright_page_is_not_turned_by_90_degrees(tilt) -> None:
+    gray = cv2.cvtColor(rotate_content(text_page(1600, 2200), tilt), cv2.COLOR_RGB2GRAY)
+    result = detect_orientation(gray)
+    assert not result.needs_rotation, f"tilt {tilt} was read as sideways: {result}"
+
+
+@pytest.mark.parametrize("k", [1, 3])
+@pytest.mark.parametrize("tilt", [0.0, 8.0])
+def test_a_sideways_page_is_found_even_when_it_is_also_tilted(k, tilt) -> None:
+    page = np.ascontiguousarray(np.rot90(rotate_content(text_page(1600, 2200), tilt), k))
+    assert detect_orientation(cv2.cvtColor(page, cv2.COLOR_RGB2GRAY)).needs_rotation
+
+
+def test_a_page_with_text_in_only_half_of_it_is_judged_by_its_lines_not_its_margins() -> None:
+    image = Image.new("RGB", (1600, 2200), (250, 250, 248))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=34)
+    for row in range(28):
+        draw.text((60, 70 + row * 68), "Patient note Paracetamol", fill=(20, 20, 40), font=font)
+    upright = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2GRAY)
+    assert not detect_orientation(upright).needs_rotation
+    assert detect_orientation(np.ascontiguousarray(np.rot90(upright))).needs_rotation
+
+
+def test_ruled_paper_and_tables_keep_their_orientation() -> None:
+    ruled = Image.new("RGB", (1600, 2000), (250, 250, 250))
+    draw = ImageDraw.Draw(ruled)
+    for y in range(150, 1900, 60):
+        draw.line([(0, y), (1600, y)], fill=(150, 170, 220), width=2)
+    for row in range(10):
+        draw.text((120, 140 + row * 120), f"Patient note line {row + 1}", fill=(10, 10, 10), font=ImageFont.load_default(size=34))
+    gray = cv2.cvtColor(np.asarray(ruled), cv2.COLOR_RGB2GRAY)
+    assert not detect_orientation(gray).needs_rotation
+    assert detect_orientation(np.ascontiguousarray(np.rot90(gray))).needs_rotation
