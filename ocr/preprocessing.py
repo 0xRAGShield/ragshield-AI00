@@ -9,8 +9,12 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from ocr.orientation import OrientationResult, detect_orientation, rotate_k90, undo_rot90_point
+from ocr.page_crop import find_page_quad, warp_page
+
 SUPPORTED_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 LANCZOS = Image.Resampling.LANCZOS
+_DESKEW_ANALYSIS_SIDE = 1000
 
 
 class ImageValidationError(ValueError):
@@ -40,8 +44,15 @@ class PreprocessConfig:
     adaptive_c: int = 10
     enable_deskew: bool = True
     deskew_min_degrees: float = 0.6
-    deskew_max_degrees: float = 12.0
-    deskew_step_degrees: float = 0.5
+    deskew_max_degrees: float = 25.0
+    deskew_coarse_step_degrees: float = 2.0
+    deskew_step_degrees: float = 0.25
+    # Quarter-turn detection for pages scanned or photographed sideways.
+    enable_orientation: bool = True
+    orientation_ratio: float = 1.5
+    # Cut the sheet of paper out of a photo and flatten its perspective. Conservative:
+    # only applied when the sheet is clearly brighter than its surroundings.
+    enable_page_crop: bool = True
     enable_sharpen: bool = True
     enable_illumination: bool = True
 
@@ -52,6 +63,10 @@ class PreprocessConfig:
             raise ValueError("median_ksize must be an odd integer >= 3")
         if self.max_scale < 1:
             raise ValueError("max_scale must be >= 1")
+        if self.deskew_coarse_step_degrees <= 0 or self.deskew_step_degrees <= 0:
+            raise ValueError("deskew steps must be positive")
+        if self.orientation_ratio < 1.0:
+            raise ValueError("orientation_ratio must be >= 1")
         if not 150 <= self.target_dpi <= self.max_target_dpi <= 600:
             raise ValueError(
                 "target_dpi must sit between 150 and max_target_dpi (<= 600)"
@@ -80,6 +95,15 @@ class PageGeometry:
     scaled_height: int
     processed_width: int
     processed_height: int
+    # Optional stages applied to the EXIF-oriented page before scaling and deskew:
+    # a perspective crop of the sheet of paper (oriented -> cropped frame), then
+    # counter-clockwise quarter turns (cropped -> rotated frame).
+    rotation_k90: int = 0
+    rotated_width: int = 0
+    rotated_height: int = 0
+    page_homography: list[list[float]] | None = None  # oriented frame -> cropped frame
+    cropped_width: int = 0
+    cropped_height: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -93,9 +117,19 @@ class PageGeometry:
         inverse = cv2.invertAffineTransform(matrix)
         scaled_x = inverse[0, 0] * x + inverse[0, 1] * y + inverse[0, 2]
         scaled_y = inverse[1, 0] * x + inverse[1, 1] * y + inverse[1, 2]
-        if self.scale == 0:
-            return scaled_x, scaled_y
-        return scaled_x / self.scale, scaled_y / self.scale
+        if self.scale != 0:
+            scaled_x, scaled_y = scaled_x / self.scale, scaled_y / self.scale
+        if self.rotation_k90 % 4:
+            scaled_x, scaled_y = undo_rot90_point(
+                scaled_x, scaled_y, self.rotation_k90,
+                self.rotated_width or self.cropped_width or self.oriented_width,
+                self.rotated_height or self.cropped_height or self.oriented_height,
+            )
+        if self.page_homography is not None:
+            back = np.linalg.inv(np.asarray(self.page_homography, dtype=np.float64))
+            point = cv2.perspectiveTransform(np.array([[[scaled_x, scaled_y]]], dtype=np.float64), back)[0, 0]
+            scaled_x, scaled_y = float(point[0]), float(point[1])
+        return scaled_x, scaled_y
 
     def map_processed_box_to_oriented(
         self,
@@ -455,53 +489,66 @@ def sharpen(image: np.ndarray) -> np.ndarray:
 
 
 def deskew_angle(gray: np.ndarray, config: PreprocessConfig) -> float:
-    """Return the correction angle in degrees. Zero means leave the image."""
+    """Return the correction angle in degrees. Zero means leave the image.
+
+    Searches a coarse grid over +-deskew_max_degrees on a downscaled binary image,
+    then refines around the best coarse angle. Much faster than rotating the
+    full-size page at every step, and it can afford a wide range.
+    """
     if not config.enable_deskew:
         return 0.0
 
-    blur = cv2.GaussianBlur(gray, (3, 3), 0)
-
+    small = gray
+    longest = max(gray.shape[:2])
+    if longest > _DESKEW_ANALYSIS_SIDE:
+        factor = _DESKEW_ANALYSIS_SIDE / longest
+        small = cv2.resize(
+            gray,
+            (max(1, int(gray.shape[1] * factor)), max(1, int(gray.shape[0] * factor))),
+            interpolation=cv2.INTER_AREA,
+        )
+    blur = cv2.GaussianBlur(small, (3, 3), 0)
     _threshold, binary = cv2.threshold(
-        blur,
-        0,
-        255,
-        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
+        blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
     )
-
     if int(binary.sum()) < 255 * 40:
         return 0.0
 
+    limit = config.deskew_max_degrees
+    coarse = _best_angle(binary, _angle_grid(-limit, limit, config.deskew_coarse_step_degrees))
+    fine = _best_angle(
+        binary,
+        _angle_grid(
+            max(-limit, coarse - config.deskew_coarse_step_degrees),
+            min(limit, coarse + config.deskew_coarse_step_degrees),
+            config.deskew_step_degrees,
+        ),
+    )
+    if abs(fine) < config.deskew_min_degrees:
+        return 0.0
+    return fine
+
+
+def _angle_grid(start: float, stop: float, step: float) -> list[float]:
+    count = int(round((stop - start) / step))
+    return [start + index * step for index in range(count + 1)]
+
+
+def _best_angle(binary: np.ndarray, angles: list[float]) -> float:
     height, width = binary.shape[:2]
     center = (width / 2.0, height / 2.0)
-    best_angle = 0.0
-    best_score = -1.0
-
-    angle = -config.deskew_max_degrees
-
-    while angle <= config.deskew_max_degrees + 1e-6:
+    best_angle, best_score = 0.0, -1.0
+    for angle in angles:
         matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-
         rotated = cv2.warpAffine(
-            binary,
-            matrix,
-            (width, height),
-            flags=cv2.INTER_NEAREST,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=0,
+            binary, matrix, (width, height),
+            flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0,
         )
-
-        projection = rotated.sum(axis=1).astype(np.float64)
-        score = float(projection.var())
-
-        if score > best_score:
-            best_score = score
-            best_angle = float(angle)
-
-        angle += config.deskew_step_degrees
-
-    if abs(best_angle) < config.deskew_min_degrees:
-        return 0.0
-
+        score = float(rotated.sum(axis=1).astype(np.float64).var())
+        # Strictly greater keeps the smallest |angle| on ties because the grid is ordered
+        # from negative to positive; prefer the angle closest to zero explicitly.
+        if score > best_score or (score == best_score and abs(angle) < abs(best_angle)):
+            best_score, best_angle = score, float(angle)
     return best_angle
 
 
@@ -713,8 +760,32 @@ def apply_combined_preprocess(
     notes: list[str] = []
     oriented_height, oriented_width = original.shape[:2]
 
+    # 1. Cut the sheet out of a photo and flatten perspective. Done first so a dark
+    #    table around the paper cannot confuse the orientation check.
+    working = original
+    homography = None
+    if config.enable_page_crop:
+        quad = find_page_quad(to_gray(working))
+        if quad is not None:
+            working, matrix = warp_page(working, quad)
+            homography = matrix.tolist()
+            steps.append("page-crop")
+            notes.append("page cropped and flattened from a photo")
+    cropped_height, cropped_width = working.shape[:2]
+
+    # 2. Quarter turn for sideways pages.
+    rotation_k90 = 0
+    if config.enable_orientation:
+        orientation = detect_orientation(to_gray(working), config.orientation_ratio)
+        notes.extend(orientation.notes)
+        if orientation.needs_rotation:
+            rotation_k90 = orientation.k90
+            working = rotate_k90(working, rotation_k90)
+            steps.append(f"rotate:{rotation_k90 * 90}deg-ccw")
+    rotated_height, rotated_width = working.shape[:2]
+
     scaled, scale, scale_notes = upscale_if_needed(
-        original,
+        working,
         info.dpi,
         config,
     )
@@ -781,6 +852,12 @@ def apply_combined_preprocess(
         scaled_height=int(scaled_height),
         processed_width=int(processed_width),
         processed_height=int(processed_height),
+        rotation_k90=int(rotation_k90),
+        rotated_width=int(rotated_width),
+        rotated_height=int(rotated_height),
+        page_homography=homography,
+        cropped_width=int(cropped_width),
+        cropped_height=int(cropped_height),
     )
     return variant, geometry
 
@@ -788,6 +865,18 @@ def apply_combined_preprocess(
 def align_color(original: np.ndarray, geometry: PageGeometry) -> np.ndarray:
     """Apply only the geometric steps (scale, deskew) of the combined pipeline to colour."""
     image = original
+    if geometry.page_homography is not None:
+        border = (255, 255, 255) if image.ndim == 3 else 255
+        image = cv2.warpPerspective(
+            image,
+            np.asarray(geometry.page_homography, dtype=np.float64),
+            (geometry.cropped_width, geometry.cropped_height),
+            flags=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=border,
+        )
+    if geometry.rotation_k90 % 4:
+        image = rotate_k90(image, geometry.rotation_k90)
     if geometry.scale > 1.0:
         resized = Image.fromarray(image).resize(
             (geometry.scaled_width, geometry.scaled_height), resample=LANCZOS
