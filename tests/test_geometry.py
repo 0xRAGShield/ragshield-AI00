@@ -214,3 +214,12 @@ def test_ruled_paper_and_tables_keep_their_orientation() -> None:
     gray = cv2.cvtColor(np.asarray(ruled), cv2.COLOR_RGB2GRAY)
     assert not detect_orientation(gray).needs_rotation
     assert detect_orientation(np.ascontiguousarray(np.rot90(gray))).needs_rotation
+
+
+def test_page_crop_stays_inside_the_paper_so_no_table_strip_is_included() -> None:
+    page = text_page()
+    photo, matrix = photo_of(page, PHOTO_CORNERS)
+    quad = find_page_quad(cv2.cvtColor(photo, cv2.COLOR_RGB2GRAY))
+    flat, _ = warp_page(photo, quad)
+    edge = np.concatenate([flat[:3].reshape(-1, 3), flat[-3:].reshape(-1, 3), flat[:, :3].reshape(-1, 3), flat[:, -3:].reshape(-1, 3)])
+    assert edge.mean() > 200, "dark table showed up along the edge of the flattened page"

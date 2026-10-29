@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from ocr.orientation import OrientationResult, detect_orientation, rotate_k90, undo_rot90_point
+from ocr.orientation import detect_orientation, rotate_k90, undo_rot90_point
 from ocr.page_crop import find_page_quad, warp_page
 
 SUPPORTED_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}

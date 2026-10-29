@@ -88,7 +88,8 @@ def _text_page(rows, size=(1600, 2000), start=140, pitch=120, ruled=False, font_
     draw = ImageDraw.Draw(image)
     if ruled:
         for y in range(150, size[1] - 100, 60):
-            draw.line([(0, y), (size[0], y)], fill=(150, 170, 220), width=2)
+            # inset from the edge, like the ruled area of a photographed notebook page
+            draw.line([(40, y), (size[0] - 40, y)], fill=(150, 170, 220), width=2)
     for index in range(rows):
         draw.text((120, start + index * pitch), f"Patient note line {index + 1} Paracetamol 500mg", fill=(10, 10, 10), font=_font(font_size))
     return image
@@ -104,9 +105,13 @@ def test_ruled_notebook_paper_does_not_turn_rules_into_lines():
     assert any("ruling lines" in note for note in result.warnings)
 
 
-def test_ruling_removal_can_be_turned_off():
-    result = detect_lines(_text_page(10, ruled=True), LineDetectConfig(remove_rules=False))
-    assert len(result.lines) > 10
+def test_ruling_removal_keeps_text_boxes_from_stretching_to_the_page_edge():
+    page = _text_page(10, ruled=True)
+    with_removal = detect_lines(page)
+    without = detect_lines(page, LineDetectConfig(remove_rules=False))
+    # Text is about 700 px wide. Left in, a rule under each line merges with it and the box spans the page.
+    assert max(line.bbox[2] - line.bbox[0] for line in with_removal.lines) < 1000
+    assert max(line.bbox[2] - line.bbox[0] for line in without.lines) > 1400
 
 
 def test_thick_text_bars_are_not_mistaken_for_ruling_lines(tmp_path):
@@ -175,3 +180,17 @@ def test_rows_are_ordered_top_to_bottom_whatever_the_direction():
 def test_invalid_direction_is_rejected():
     with pytest.raises(ValueError):
         LineDetectConfig(direction="up")
+
+
+def test_a_thin_strip_along_the_page_edge_is_not_a_text_line():
+    image = _text_page(5)
+    ImageDraw.Draw(image).rectangle((0, 1992, 500, 1999), fill=(30, 30, 30))  # scan/crop border artifact
+    result = detect_lines(image)
+    assert len(result.lines) == 5
+    assert any("page edge" in note for note in result.warnings)
+
+
+def test_a_real_line_near_the_edge_is_kept():
+    image = Image.new("RGB", (1600, 2000), (250, 250, 250))
+    ImageDraw.Draw(image).text((120, 1930), "Last line of the page, close to the bottom", fill=(10, 10, 10), font=_font(34))
+    assert len(detect_lines(image).lines) == 1

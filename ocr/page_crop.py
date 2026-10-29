@@ -16,6 +16,9 @@ MIN_AREA_FRACTION = 0.25
 MAX_AREA_FRACTION = 0.96
 MIN_CONTRAST = 25.0
 MAX_OUTPUT_SIDE = 6000
+# Pull each corner this fraction of the way to the centre so the crop never includes a
+# sliver of table. Costs about 1% of the margin, which is blank paper anyway.
+CORNER_INSET = 0.01
 
 
 def find_page_quad(gray: np.ndarray) -> np.ndarray | None:
@@ -58,7 +61,8 @@ def find_page_quad(gray: np.ndarray) -> np.ndarray | None:
         return None
 
     ordered = order_corners(quad) / factor
-    return ordered
+    centre = ordered.mean(axis=0)
+    return ordered + (centre - ordered) * CORNER_INSET
 
 
 def order_corners(points: np.ndarray) -> np.ndarray:

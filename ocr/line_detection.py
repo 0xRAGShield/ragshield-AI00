@@ -427,6 +427,11 @@ def _filter_boxes(
             continue
         if w < config.min_line_width or h < config.min_line_height:
             continue
+        # A thin strip hugging the edge of the page is a crop or scan border, not a line.
+        touches_edge = x1 <= 2 or y1 <= 2 or x2 >= width - 2 or y2 >= height - 2
+        if touches_edge and h < max(config.min_line_height, int(0.01 * height)):
+            warnings.append(f"ignored thin strip along the page edge {box}")
+            continue
         kept.append(box)
     return kept
 
