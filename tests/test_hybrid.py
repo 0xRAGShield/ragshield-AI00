@@ -343,3 +343,41 @@ def test_cli_qwen_mode_does_not_call_hybrid(monkeypatch, tmp_path):
     assert code == 0
     assert called["compare"] == 1
     assert called["hybrid"] == 0
+
+
+class _FlakyQwen:
+    """Reads the first line, then returns nothing for the rest."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def transcribe(self, image, preprocessing_method: str) -> Transcription:
+        self.calls += 1
+        text = "first line" if self.calls == 1 else ""
+        return Transcription(text=text, raw_text=text, model="m", status="success",
+                             preprocessing_method=preprocessing_method, latency_ms=1.0)
+
+
+def _qwen_only() -> HybridConfig:
+    return HybridConfig(routing=RoutingConfig(policy="qwen_default"))
+
+
+def test_status_is_error_when_every_detected_line_comes_back_empty(tmp_path):
+    result = run_hybrid(_prescription(tmp_path / "rx.png"), None, _Qwen(""), _Trocr(), _qwen_only())
+    assert result.line_count >= 2
+    assert result.status == "error"
+    assert result.merged_transcription == ""
+
+
+def test_status_is_partial_when_only_some_lines_are_read(tmp_path):
+    qwen = _FlakyQwen()
+    result = run_hybrid(_prescription(tmp_path / "rx.png"), None, qwen, _Trocr(), _qwen_only())
+    assert qwen.calls >= 2
+    assert result.status == "partial"
+    assert result.merged_transcription == "first line"
+    assert any("incomplete" in warning for warning in result.warnings)
+
+
+def test_status_is_success_when_all_lines_are_read(tmp_path):
+    result = run_hybrid(_prescription(tmp_path / "rx.png"), None, _Qwen("ok"), _Trocr(), _qwen_only())
+    assert result.status == "success"

@@ -1,4 +1,4 @@
-"""Local Arabic-English handwritten OCR. Loads one cached checkpoint on CPU."""
+"""Local Arabic-English handwritten OCR. Loads one cached checkpoint (GPU when available)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any, Callable
 import numpy as np
 from PIL import Image
 
-from ocr.config import default_cache_dir, load_dotenv
+from ocr.config import default_cache_dir, inference_context, load_dotenv, resolve_device, resolve_dtype
 from ocr.preprocessing import Variant
 
 MODEL_ID = "sherif1313/Arabic-English-handwritten-OCR-v3"
@@ -55,8 +55,10 @@ class LocalModelError(RuntimeError):
 class HandwrittenOcrConfig:
     model: str = MODEL_ID
     cache_dir: Path = field(default_factory=default_cache_dir)
-    device: str = "cpu"
-    dtype: str = "float32"
+    # "auto" picks cuda, then mps, then cpu. dtype "auto" is bfloat16/float16 on
+    # CUDA and float32 elsewhere. Override with HANDWRITTEN_OCR_DEVICE / _DTYPE.
+    device: str = "auto"
+    dtype: str = "auto"
     max_new_tokens: int = 512
     # Modest penalty from the checkpoint card. No n-gram ban: repeated doses
     # and instructions can be genuine. Greedy decoding stays deterministic.
@@ -92,6 +94,8 @@ class HandwrittenOcrConfig:
         return cls(
             model=model,
             cache_dir=cache_dir,
+            device=os.environ.get("HANDWRITTEN_OCR_DEVICE", "auto").strip() or "auto",
+            dtype=os.environ.get("HANDWRITTEN_OCR_DTYPE", "auto").strip() or "auto",
             max_new_tokens=max_new_tokens,
             repetition_penalty=repetition_penalty,
             max_image_side=max_image_side,
@@ -141,9 +145,10 @@ class HandwrittenOcrClient:
                 f"This client only loads {MODEL_ID}. "
                 f"Refusing {self.config.model}."
             )
-        self._loader = loader or _load_from_disk
+        self._loader = loader or self._default_loader
         self._model = None
         self._processor = None
+        self.device = "cpu"
 
     def transcribe(
         self,
@@ -193,6 +198,11 @@ class HandwrittenOcrClient:
         self._model, self._processor = self._loader(path)
         self._apply_greedy_generation_config()
 
+    def _default_loader(self, path: Path):
+        self.device = resolve_device(self.config.device)
+        dtype = resolve_dtype(self.config.dtype, self.device)
+        return _load_from_disk(path, self.device, dtype)
+
     def checkpoint_dir(self) -> Path:
         return Path(self.config.cache_dir) / _CHECKPOINT_DIRNAME
 
@@ -240,11 +250,12 @@ class HandwrittenOcrClient:
             padding=True,
             return_tensors="pt",
         )
+        target = getattr(model, "device", None) or self.device
         inputs = {
-            key: value.to("cpu") if hasattr(value, "to") else value
+            key: value.to(target) if hasattr(value, "to") else value
             for key, value in inputs.items()
         }
-        with _inference_context():
+        with inference_context():
             generated = model.generate(
                 **inputs,
                 max_new_tokens=self.config.max_new_tokens,
@@ -299,20 +310,6 @@ def diagnose_transcription(text: str | None) -> list[str]:
     return warnings
 
 
-def _inference_context():
-    """torch.inference_mode() when torch is installed, otherwise a no-op.
-
-    Keeps the client importable and testable without torch.
-    """
-    try:
-        import torch
-    except ImportError:  # pragma: no cover - exercised only without torch
-        from contextlib import nullcontext
-
-        return nullcontext()
-    return torch.inference_mode()
-
-
 def _limit_image_side(image: Image.Image, max_side: int) -> Image.Image:
     if max_side < 32:
         return image
@@ -343,16 +340,16 @@ def _as_pil(image: Image.Image | np.ndarray | Variant) -> Image.Image:
     return Image.fromarray(array).convert("RGB")
 
 
-def _load_from_disk(path: Path):
+def _load_from_disk(path: Path, device: str = "cpu", dtype: str = "float32"):
     from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         str(path),
         local_files_only=True,
-        torch_dtype="float32",
+        torch_dtype=dtype,
         low_cpu_mem_usage=True,
     )
-    model.to("cpu")
+    model.to(device)
     model.eval()
     processor = AutoProcessor.from_pretrained(str(path), local_files_only=True)
     return model, processor

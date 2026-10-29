@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from PIL import Image
 
-from ocr.config import TROCR_MODEL_ID, default_trocr_checkpoint_dir, load_dotenv
+from ocr.config import TROCR_MODEL_ID, default_trocr_checkpoint_dir, inference_context, load_dotenv, resolve_device
 from ocr.crops import CropSpec
 
 # Files that a local microsoft/trocr-base-handwritten dump normally includes.
@@ -181,9 +181,14 @@ class TrocrClient:
         loader: Callable[[Path], tuple[Any, Any]] | None = None,
     ) -> None:
         self.config = config or TrocrConfig()
-        self._loader = loader or _load_from_disk
+        self._loader = loader or self._default_loader
         self._model = None
         self._processor = None
+        self.device = "cpu"
+
+    def _default_loader(self, path: Path):
+        self.device = resolve_device(self.config.device)
+        return _load_from_disk(path, self.device)
 
     def inspect(self) -> TrocrBatchResult:
         """Describe readiness without loading weights."""
@@ -457,20 +462,18 @@ class TrocrClient:
         image: Image.Image,
         max_new_tokens: int | None = None,
     ) -> str:
-        import torch
-
         processor = self._processor
         model = self._model
         encoded = processor(images=image, return_tensors="pt")
         pixel_values = encoded["pixel_values"]
         if hasattr(pixel_values, "to"):
-            pixel_values = pixel_values.to(self.config.device)
+            pixel_values = pixel_values.to(self.device)
         tokens = (
             self.config.max_new_tokens
             if max_new_tokens is None
             else max_new_tokens
         )
-        with torch.inference_mode():
+        with inference_context():
             generated = model.generate(
                 pixel_values,
                 max_new_tokens=tokens,
@@ -501,7 +504,7 @@ def _dependency_error() -> str | None:
     return None
 
 
-def _load_from_disk(path: Path):
+def _load_from_disk(path: Path, device: str = "cpu"):
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
     processor = TrOCRProcessor.from_pretrained(str(path), local_files_only=True)
@@ -509,7 +512,7 @@ def _load_from_disk(path: Path):
         str(path),
         local_files_only=True,
     )
-    model.to("cpu")
+    model.to(device)
     model.eval()
     return model, processor
 

@@ -7,6 +7,7 @@ A missing checkpoint records every image as not run.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import time
 from dataclasses import asdict, dataclass, field
@@ -102,7 +103,7 @@ def run_real_images(
     destination.mkdir(parents=True, exist_ok=True)
     images = discover_images(root)
     config = client.config
-    originals = {path: path.read_bytes() for path in images}
+    originals = {path: _fingerprint(path) for path in images}
 
     if require_probe:
         try:
@@ -290,8 +291,16 @@ def _write_summaries(report: BatchReport, destination: Path) -> None:
     report.summary_csv = str(csv_path)
 
 
-def _assert_unchanged(originals: dict[Path, bytes]) -> None:
-    for path, content in originals.items():
-        if path.read_bytes() != content:
+def _fingerprint(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _assert_unchanged(originals: dict[Path, str]) -> None:
+    for path, fingerprint in originals.items():
+        if _fingerprint(path) != fingerprint:
             raise RuntimeError(f"Original image was modified: {path}")
 

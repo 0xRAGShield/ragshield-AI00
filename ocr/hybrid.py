@@ -196,13 +196,21 @@ def run_hybrid(
         for item in sorted(line_results, key=lambda row: row.reading_order)
         if item.raw_text
     )
-    status = "success"
-    if detection.lines and not line_results:
-        status = "error"
-        warnings.append("lines were detected but none could be transcribed")
-    elif not detection.lines:
+    usable = [item for item in line_results if item.status == "success" and item.raw_text]
+    if not detection.lines:
         status = "no_lines"
         warnings.append("hybrid produced no line transcriptions")
+    elif not usable:
+        status = "error"
+        warnings.append("lines were detected but none could be transcribed")
+    elif len(usable) < len(line_results):
+        status = "partial"
+        warnings.append(
+            f"{len(line_results) - len(usable)} of {len(line_results)} detected lines "
+            "failed or were empty; the merged text is incomplete"
+        )
+    else:
+        status = "success"
 
     result = HybridResult(
         source=str(source),
