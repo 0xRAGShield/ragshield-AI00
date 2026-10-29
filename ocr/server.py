@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import html
+import json
 import re
+import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -11,9 +13,11 @@ from urllib.parse import urlparse
 
 from ocr.config import VARIANT_NAMES
 from ocr.handwritten_ocr_client import HandwrittenOcrClient, HandwrittenOcrConfig
-from ocr.pipeline import compare_image, prepare
+from ocr.pipeline import CompareResult, prepare, transcribe_variants
 from ocr.preprocessing import ImageValidationError, PreprocessConfig
 from ocr.report import write_report
+
+DEFAULT_VARIANTS = ("original", "combined_gray")
 
 _PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -57,7 +61,7 @@ def _checks(selected: set[str]) -> str:
 
 
 def _page(body: str, selected: set[str] | None = None) -> bytes:
-    chosen = selected if selected is not None else {"original", "combined"}
+    chosen = selected if selected is not None else set(DEFAULT_VARIANTS)
     document = _PAGE.format(checks=_checks(chosen), body=body)
     return document.encode("utf-8")
 
@@ -112,39 +116,59 @@ def _collect_fields(body: bytes, boundary: bytes) -> dict[str, list[str]]:
 
 
 class App:
-    def __init__(self, output_root: Path) -> None:
+    """Upload page logic. The model is loaded once, on the first request that needs it."""
+
+    def __init__(self, output_root: Path, client=None) -> None:
         self.output_root = output_root
         self.output_root.mkdir(parents=True, exist_ok=True)
+        self._client = client
+        self._client_lock = threading.Lock()
+        self._inference_lock = threading.Lock()
+
+    def _get_client(self):
+        with self._client_lock:
+            if self._client is None:
+                self._client = HandwrittenOcrClient(HandwrittenOcrConfig.from_env())
+            return self._client
 
     def handle_upload(self, body: bytes, content_type: str) -> bytes:
         _fields, files = parse_multipart(body, content_type)
         field_lists = _collect_fields(body, _boundary(content_type))
         variants = [name for name in field_lists.get("variant", []) if name in VARIANT_NAMES]
         if not variants:
-            variants = ["original", "combined"]
+            variants = list(DEFAULT_VARIANTS)
         upload = files.get("image")
         if upload is None or not upload["data"]:
             return _page("<p class=\"error\">Choose an image first.</p>", set(variants))
-        session = uuid.uuid4().hex
-        directory = self.output_root / session
-        directory.mkdir(parents=True, exist_ok=True)
         suffix = Path(upload["filename"]).suffix.lower() or ".png"
         if suffix not in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
             return _page("<p class=\"error\">Unsupported file type.</p>", set(variants))
+        session = uuid.uuid4().hex
+        directory = self.output_root / session
+        directory.mkdir(parents=True, exist_ok=True)
         source = directory / f"source{suffix}"
         source.write_bytes(upload["data"])
         try:
-            prepare(source, config=PreprocessConfig(), variants=list(VARIANT_NAMES), output_dir=directory)
-            client = HandwrittenOcrClient(HandwrittenOcrConfig.from_env())
-            result = compare_image(
-                source,
-                client,
-                variants=variants,
-                config=PreprocessConfig(),
-                output_dir=directory,
+            # Preprocess once: every variant is saved so it can be shown, and only
+            # the selected ones are sent to the model.
+            prepared, metadata = prepare(
+                source, config=PreprocessConfig(), variants=list(VARIANT_NAMES), output_dir=directory
+            )
+            chosen = [variant for variant in prepared if variant.name in variants]
+            with self._inference_lock:
+                transcriptions = transcribe_variants(chosen, self._get_client())
+            (directory / "transcriptions.json").write_text(
+                json.dumps([item.to_dict() for item in transcriptions], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            result = CompareResult(
+                source=str(source),
+                output_dir=str(directory),
+                transcriptions=transcriptions,
+                variant_metadata=metadata,
             )
             write_report(result, directory)
-        except ImageValidationError as exc:
+        except (ImageValidationError, KeyError, ValueError) as exc:
             return _page(f"<p class=\"error\">{html.escape(str(exc))}</p>", set(variants))
         cards = []
         by_method = {item.preprocessing_method: item for item in result.transcriptions}
@@ -206,6 +230,13 @@ def make_handler(app: App):
                 page = app.handle_upload(body, self.headers.get("Content-Type", ""))
             except (ValueError, OSError) as exc:
                 page = _page(f"<p class=\"error\">{html.escape(str(exc))}</p>")
+            except Exception as exc:  # noqa: BLE001 - never drop the connection on a bad upload
+                self._send(
+                    500,
+                    "text/html; charset=utf-8",
+                    _page(f"<p class=\"error\">Unexpected error: {html.escape(type(exc).__name__)}: {html.escape(str(exc))}</p>"),
+                )
+                return
             self._send(200, "text/html; charset=utf-8", page)
 
         def log_message(self, fmt: str, *args) -> None:
