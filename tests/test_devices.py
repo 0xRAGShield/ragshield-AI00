@@ -52,7 +52,7 @@ def test_qwen_default_loader_receives_resolved_device_and_dtype(monkeypatch, tmp
         def generate(self, **_):
             raise RuntimeError("stop")
 
-    monkeypatch.setattr(qwen_module, "_load_from_disk", lambda path, device, dtype: seen.update(device=device, dtype=dtype) or (_Model(), object()))
+    monkeypatch.setattr(qwen_module, "_load_from_disk", lambda path, device, dtype, **kw: seen.update(device=device, dtype=dtype) or (_Model(), object()))
     client = HandwrittenOcrClient(HandwrittenOcrConfig(cache_dir=tmp_path / "cache", device="cuda", dtype="auto"))
     client.ensure_ready()
     assert seen == {"device": "cuda", "dtype": "float16"}

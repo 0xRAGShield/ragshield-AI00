@@ -128,6 +128,27 @@ def main(argv: list[str] | None = None) -> int:
     _add_preprocess_flags(triage)
     _add_model_flags(triage)
 
+    sub.add_parser("engines", help="List OCR engines and whether each is ready to run")
+
+    bench = sub.add_parser(
+        "compare-engines",
+        help="Run several engines on the same folder of pages and compare error rate, speed and failures",
+    )
+    bench.add_argument("--input", type=Path, required=True, help="Folder of images; <image>.txt next to each gives ground truth")
+    bench.add_argument("--out", type=Path, default=Path("outputs/engine_benchmark"))
+    bench.add_argument("--engines", default="qwen,paddleocr,surya", help="Comma-separated names (see: python -m ocr engines)")
+    bench.add_argument(
+        "--preprocess",
+        choices=("original", "aligned"),
+        default="original",
+        help="original: give every engine the untouched page. aligned: this project's cropped/turned/deskewed colour page",
+    )
+    bench.add_argument("--paddle-lang", default="ar")
+    bench.add_argument("--paddle-version", default=None, help="For example PP-OCRv5")
+    bench.add_argument("--paddle-device", default=None, help="For example gpu:0 or cpu")
+    _add_preprocess_flags(bench)
+    _add_model_flags(bench)
+
     serve = sub.add_parser("serve", help="Local page for upload, variants, and OCR")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
@@ -303,6 +324,18 @@ def main(argv: list[str] | None = None) -> int:
         if report.blocker:
             return 2
         return 0 if report.failed == 0 else 1
+    if args.command == "engines":
+        from ocr.engines import engine_status
+
+        for row in engine_status():
+            mark = "ready      " if row["available"] else "unavailable"
+            print(f"{row['name']:<10} {mark}  {row['detail']}")
+            print(f"{'':<22}{row['description']}")
+            if row["license"]:
+                print(f"{'':<22}licence: {row['license']}")
+        return 0
+    if args.command == "compare-engines":
+        return _compare_engines(args)
     if args.command == "triage":
         from ocr.triage import run_triage
 
@@ -364,6 +397,39 @@ def main(argv: list[str] | None = None) -> int:
         return evaluate_main(argv)
     parser.error(f"Unknown command {args.command}")
     return 2
+
+
+def _compare_engines(args: argparse.Namespace) -> int:
+    from ocr.engine_benchmark import run_engine_benchmark
+    from ocr.engines import create_engine
+    from ocr.engines.qwen import QwenEngine
+
+    engines = []
+    for name in [item.strip() for item in args.engines.split(",") if item.strip()]:
+        if name == "qwen":
+            engine = QwenEngine(HandwrittenOcrClient(_qwen_config(args)))
+        elif name == "paddleocr":
+            engine = create_engine(name, lang=args.paddle_lang, ocr_version=args.paddle_version, device=args.paddle_device)
+        else:
+            engine = create_engine(name)
+        usable, detail = engine.availability()
+        if usable:
+            engines.append(engine)
+        else:
+            print(f"Skipping {name}: {detail}", file=sys.stderr)
+    if not engines:
+        print("No engine is available. See: python -m ocr engines", file=sys.stderr)
+        return 2
+    try:
+        report = run_engine_benchmark(
+            args.input, args.out, engines, preprocess=args.preprocess, preprocess_config=_config_from_args(args)
+        )
+    finally:
+        for engine in engines:
+            engine.close()
+    print(json.dumps({"engines": report.engines, "scored_images": report.scored_images, "summary": report.summary}, ensure_ascii=False, indent=2))
+    print(f"Summary: {args.out / 'engine_summary.md'}")
+    return 0
 
 
 def _names(value):

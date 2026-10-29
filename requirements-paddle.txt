@@ -1,0 +1,6 @@
+# Optional: PaddleOCR engine (python -m ocr engines).
+# CPU:  pip install -r requirements-paddle.txt
+# GPU:  install the paddlepaddle-gpu build that matches your CUDA version first
+#       (see https://www.paddlepaddle.org.cn/en/install/quick), then: pip install paddleocr
+paddlepaddle
+paddleocr>=3.0

@@ -92,6 +92,42 @@ Put a `<image>.txt` with the correct text next to an image to get its CER. Triag
 `triage_summary.md` (images grouped as `input_quality`, `detection`, `recognition`) and an overlay image per page
 with the detected boxes. The thresholds are rules of thumb. Open the overlays and judge for yourself.
 
+## Other engines and other Qwen-VL models
+
+Engines share one small interface (`ocr/engines/`): a page image in, text, optional line boxes and an
+optional confidence out.
+
+```bash
+python -m ocr engines                                        # what is installed and ready
+python -m ocr compare-engines --input data/images --out outputs/engines --engines qwen,paddleocr,surya
+python -m ocr compare-engines ... --preprocess aligned       # give every engine this project's cropped, turned, deskewed page
+```
+
+Put `<image>.txt` (the correct text) next to each image to get error rates. The summary ranks engines by
+`cer_all`, which counts a failed page as completely wrong, so an engine cannot look good by skipping hard pages.
+Confidence means different things per engine (token probability, recognition score): compare it within an engine only.
+
+| engine | install | notes |
+| --- | --- | --- |
+| `qwen` | `requirements-local.txt` | default; handwriting, Arabic and English |
+| `paddleocr` | `requirements-paddle.txt` | PaddleOCR 3.x, `--paddle-lang ar`; built mostly for printed text, so expect it to be weaker on handwriting. Verify on your pages. |
+| `surya` | `requirements-surya.txt` | needs a vLLM (NVIDIA, Docker) or llama.cpp backend. **Model weights are free for research, personal use and small startups; broader commercial use needs a licence.** |
+
+A cloud OCR API can be added by registering one more `Engine` (see `ocr/engines/qwen.py`). None is included.
+
+**Other Qwen-VL checkpoints.** The client is no longer tied to one model:
+
+```bash
+python scripts/download_models.py --model-id Qwen/Qwen2.5-VL-7B-Instruct
+export HANDWRITTEN_OCR_MODEL=Qwen/Qwen2.5-VL-7B-Instruct          # folder: <models dir>/Qwen__Qwen2.5-VL-7B-Instruct
+export HANDWRITTEN_OCR_CHECKPOINT_DIR=/path/to/any/checkpoint     # or point at a folder directly
+export HANDWRITTEN_OCR_ATTN=sdpa                                  # optional: sdpa or flash_attention_2
+export HANDWRITTEN_OCR_MAX_PIXELS=1003520                         # optional: processor resize limit
+```
+
+A general model is not fine-tuned for Arabic handwriting. Whether it beats the default is a question for
+`compare-engines` on your own pages, not an assumption. Weights are still read from disk only; nothing is downloaded at run time.
+
 ## GPU
 
 `HANDWRITTEN_OCR_DEVICE=auto` uses CUDA when torch can see it (bfloat16, or float16 on older GPUs) and falls
@@ -116,6 +152,7 @@ The test suite uses fakes for the models, so it runs without `torch` or any down
 | `ocr/tiling.py` | split large pages and long lines at blank rows |
 | `ocr/confidence.py` | token-probability confidence |
 | `ocr/triage.py` | per-page diagnosis of failures |
+| `ocr/engines/`, `ocr/engine_benchmark.py` | pluggable engines (Qwen, PaddleOCR, Surya) and side-by-side comparison |
 | `ocr/hybrid.py`, `ocr/routing.py` | per-line engine routing and merge |
 | `ocr/handwritten_ocr_client.py` | Qwen2.5-VL client |
 | `ocr/trocr_client.py` | English TrOCR client |
