@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from ocr.config import default_cache_dir, inference_context, load_dotenv, resolve_device, resolve_dtype
+from ocr.confidence import TokenStats, make_recorder
 from ocr.preprocessing import Variant
 from ocr.tiling import needs_tiling, plan_bands
 
@@ -153,6 +154,11 @@ class Transcription:
     served_model: str | None = None
     raw_text: str | None = None
     quality_warnings: list[str] = field(default_factory=list)
+    # Geometric-mean probability of the decoded tokens. A ranking signal for review,
+    # not an accuracy. None when it could not be measured.
+    confidence: float | None = None
+    min_token_prob: float | None = None
+    low_confidence_fraction: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -167,6 +173,12 @@ class Transcription:
             payload["raw_text"] = self.raw_text
         if self.quality_warnings:
             payload["quality_warnings"] = list(self.quality_warnings)
+        if self.confidence is not None:
+            payload["confidence"] = round(self.confidence, 4)
+            payload["min_token_prob"] = round(self.min_token_prob, 4) if self.min_token_prob is not None else None
+            payload["low_confidence_fraction"] = (
+                round(self.low_confidence_fraction, 4) if self.low_confidence_fraction is not None else None
+            )
         return payload
 
 
@@ -188,6 +200,7 @@ class HandwrittenOcrClient:
         self._model = None
         self._processor = None
         self.device = "cpu"
+        self._last_stats = TokenStats()
 
     def transcribe(
         self,
@@ -196,9 +209,10 @@ class HandwrittenOcrClient:
     ) -> Transcription:
         started = time.perf_counter()
         notes: list[str] = []
+        stats = TokenStats()
         try:
             self.ensure_ready()
-            text = self._generate_page(_as_pil(image), notes)
+            text = self._generate_page(_as_pil(image), notes, stats)
         except Exception as exc:
             return Transcription(
                 text=None,
@@ -218,6 +232,9 @@ class HandwrittenOcrClient:
             preprocessing_method=preprocessing_method,
             latency_ms=(time.perf_counter() - started) * 1000,
             quality_warnings=warnings,
+            confidence=stats.confidence,
+            min_token_prob=stats.min_token_prob,
+            low_confidence_fraction=stats.low_fraction,
         )
 
     def ensure_ready(self) -> None:
@@ -266,19 +283,23 @@ class HandwrittenOcrClient:
         if hasattr(gen, "top_k"):
             gen.top_k = None
 
-    def _generate_page(self, image: Image.Image, notes: list[str]) -> str:
+    def _generate_page(self, image: Image.Image, notes: list[str], stats: TokenStats | None = None) -> str:
         """Run one image, or several bands when the page is too large for one call."""
         width, height = image.size
         if self.config.tile_pages and needs_tiling(width, height, self.config.max_image_side):
             bands = plan_bands(np.asarray(image.convert("L")), self.config.max_image_side)
             if len(bands) > 1:
                 notes.append(f"large page split into {len(bands)} bands at blank rows")
-                parts = [
-                    self._generate(image.crop((0, top, width, bottom)))
-                    for top, bottom in bands
-                ]
+                parts = []
+                for top, bottom in bands:
+                    parts.append(self._generate(image.crop((0, top, width, bottom))))
+                    if stats is not None:
+                        stats.merge(self._last_stats)
                 return "\n".join(part for part in parts if part)
-        return self._generate(image)
+        text = self._generate(image)
+        if stats is not None:
+            stats.merge(self._last_stats)
+        return text
 
     def _generate(self, image: Image.Image) -> str:
         model = self._model
@@ -309,6 +330,9 @@ class HandwrittenOcrClient:
             key: value.to(target) if hasattr(value, "to") else value
             for key, value in inputs.items()
         }
+        recorder, processors = make_recorder()
+        extra = {"logits_processor": processors} if processors is not None else {}
+        self._last_stats = TokenStats()
         with inference_context():
             generated = model.generate(
                 **inputs,
@@ -318,7 +342,10 @@ class HandwrittenOcrClient:
                 pad_token_id=processor.tokenizer.eos_token_id,
                 eos_token_id=processor.tokenizer.eos_token_id,
                 num_return_sequences=1,
+                **extra,
             )
+        if recorder is not None:
+            self._last_stats = recorder.stats()
         trimmed = generated[:, inputs["input_ids"].shape[1] :]
         decoded = processor.batch_decode(
             trimmed,

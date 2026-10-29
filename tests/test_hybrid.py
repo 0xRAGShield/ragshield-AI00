@@ -156,9 +156,9 @@ def test_hybrid_calls_full_combined_preprocess(monkeypatch, tmp_path):
 
     calls = []
 
-    def wrapped(image, info, config):
+    def wrapped(image, info, config, *args, **kwargs):
         calls.append(config)
-        return real_prepare(image, info, config)
+        return real_prepare(image, info, config, *args, **kwargs)
 
     monkeypatch.setattr(hybrid_mod, "prepare_hybrid_page", wrapped)
     path = _prescription(tmp_path / "rx.png")
@@ -295,7 +295,7 @@ def test_cli_config_from_args_maps_no_flags():
 def test_hybrid_preprocessing_failure_is_reported(monkeypatch, tmp_path):
     from ocr import hybrid as hybrid_mod
 
-    def boom(_image, _info, _config):
+    def boom(_image, _info, _config, *_args, **_kwargs):
         raise RuntimeError("synthetic preprocess failure")
 
     monkeypatch.setattr(hybrid_mod, "prepare_hybrid_page", boom)

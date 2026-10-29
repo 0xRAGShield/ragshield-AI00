@@ -155,6 +155,16 @@ def write_engine_report(result: EngineCompareResult, directory: str | Path) -> P
     return path
 
 
+def _fmt_confidence(value) -> str:
+    return "n/a" if value is None else f"{value:.2f}"
+
+
+def _fmt_reasons(reasons) -> str:
+    if not reasons:
+        return ""
+    return "· <strong>" + html.escape(", ".join(reasons)) + "</strong>"
+
+
 def write_hybrid_report(result, directory: str | Path) -> Path:
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -174,7 +184,10 @@ def write_hybrid_report(result, directory: str | Path) -> Path:
               <p class="meta">bbox_processed {html.escape(str(item.bbox))}
               · bbox_oriented {html.escape(str(getattr(item, "bbox_oriented", [])))}
               · {html.escape(item.selected_engine)}
-              · {html.escape(item.status)} · review={item.review_required}</p>
+              · {html.escape(item.status)} · row {getattr(item, "row_id", 0)}
+              · confidence={_fmt_confidence(getattr(item, "confidence", None))}
+              · review={item.review_required}
+              {_fmt_reasons(getattr(item, "review_reasons", []))}</p>
               <p>{html.escape(item.routing_reason)}</p>
               {img}
               <pre>{html.escape(item.raw_text or "")}</pre>
@@ -211,6 +224,9 @@ def write_hybrid_report(result, directory: str | Path) -> Path:
 <body>
   <h1>Hybrid prescription OCR</h1>
   <p>review_required is always true. This is not a medically verified transcription.</p>
+  <p>Lines to look at first: {getattr(result, "lines_needing_review", 0)} of {result.line_count}.
+  Mean confidence: {_fmt_confidence(getattr(result, "mean_confidence", None))}
+  (a ranking signal, not an accuracy). Reading direction: {html.escape(str(getattr(result, "reading_direction", "ltr")))}.</p>
   <p>Status: {html.escape(result.status)}. Lines: {result.line_count}.
   Fallbacks: {result.fallback_count}. Engines: {html.escape(str(result.engine_counts))}.</p>
   <p>Preprocess variant: {html.escape(str(result.preprocess_variant or "combined_gray"))}.

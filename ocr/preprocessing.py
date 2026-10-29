@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from typing import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -53,6 +54,9 @@ class PreprocessConfig:
     # Cut the sheet of paper out of a photo and flatten its perspective. Conservative:
     # only applied when the sheet is clearly brighter than its surroundings.
     enable_page_crop: bool = True
+    # Also compare 0 and 180 degrees on every page using the recognizer's confidence.
+    # Costs two short recognition passes per page, so it is off by default.
+    check_upside_down: bool = False
     enable_sharpen: bool = True
     enable_illumination: bool = True
 
@@ -748,6 +752,7 @@ def apply_combined_preprocess(
     original: np.ndarray,
     info: ImageInfo,
     config: PreprocessConfig,
+    orientation_scorer: "Callable[[np.ndarray], float | None] | None" = None,
 ) -> tuple[Variant, PageGeometry]:
     """Run the project's default combined grayscale stack (no Otsu/adaptive).
 
@@ -773,13 +778,19 @@ def apply_combined_preprocess(
             notes.append("page cropped and flattened from a photo")
     cropped_height, cropped_width = working.shape[:2]
 
-    # 2. Quarter turn for sideways pages.
+    # 2. Quarter turn for sideways pages. Ink geometry says "sideways" but not which
+    #    way, so when a scorer is available the candidates are tried and the more
+    #    confidently readable one wins.
     rotation_k90 = 0
     if config.enable_orientation:
         orientation = detect_orientation(to_gray(working), config.orientation_ratio)
         notes.extend(orientation.notes)
-        if orientation.needs_rotation:
-            rotation_k90 = orientation.k90
+        base = orientation.k90 if orientation.needs_rotation else 0
+        candidates = [base]
+        if orientation_scorer is not None and (orientation.needs_rotation or config.check_upside_down):
+            candidates = [base, (base + 2) % 4]
+        rotation_k90 = _choose_quarter_turn(working, candidates, orientation_scorer, notes)
+        if rotation_k90:
             working = rotate_k90(working, rotation_k90)
             steps.append(f"rotate:{rotation_k90 * 90}deg-ccw")
     rotated_height, rotated_width = working.shape[:2]
@@ -885,10 +896,34 @@ def align_color(original: np.ndarray, geometry: PageGeometry) -> np.ndarray:
     return rotate_expand(image, geometry.angle_degrees)
 
 
+def _choose_quarter_turn(
+    working: np.ndarray,
+    candidates: list[int],
+    scorer: "Callable[[np.ndarray], float | None] | None",
+    notes: list[str],
+) -> int:
+    """Pick the candidate turn the scorer rates highest; keep the first when unsure."""
+    if scorer is None or len(candidates) < 2:
+        return candidates[0]
+    scores: dict[int, float] = {}
+    for k in candidates:
+        value = scorer(rotate_k90(working, k))
+        if value is not None:
+            scores[k] = float(value)
+    if len(scores) < 2:
+        notes.append("orientation scorer could not rate both candidates; kept the default turn")
+        return candidates[0]
+    best = max(candidates, key=lambda k: (scores.get(k, float("-inf")), k == candidates[0]))
+    detail = ", ".join(f"{k * 90}deg={scores[k]:.2f}" for k in candidates if k in scores)
+    notes.append(f"orientation chosen by recognizer confidence ({detail}): {best * 90}deg counter-clockwise")
+    return best
+
+
 def prepare_hybrid_page(
     image: Image.Image,
     info: ImageInfo,
     config: PreprocessConfig | None = None,
+    orientation_scorer: "Callable[[np.ndarray], float | None] | None" = None,
 ) -> PreparedPage:
     """EXIF-orient the page, then apply combined_gray for detection and OCR crops."""
 
@@ -897,7 +932,7 @@ def prepare_hybrid_page(
     if oriented.mode != "RGB":
         oriented = oriented.convert("RGB")
     array = np.asarray(oriented).copy()
-    variant, geometry = apply_combined_preprocess(array, info, config)
+    variant, geometry = apply_combined_preprocess(array, info, config, orientation_scorer)
     variant.name = "combined_gray"
     processed = Image.fromarray(variant.image)
     if processed.mode != "RGB":

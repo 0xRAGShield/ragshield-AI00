@@ -62,6 +62,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Hybrid: order of boxes on one row. auto = right to left when the text is mostly Arabic",
     )
     transcribe.add_argument(
+        "--review-policy",
+        default="risk",
+        choices=("risk", "all"),
+        help="Hybrid per-line review flags: only lines with a concrete reason, or every line",
+    )
+    transcribe.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.75,
+        help="Hybrid: lines below this token confidence are flagged. Uncalibrated; tune on labelled data",
+    )
+    transcribe.add_argument(
         "--hybrid-dual",
         action="store_true",
         help="Also run Qwen on TrOCR-routed lines without replacing TrOCR text.",
@@ -176,6 +188,8 @@ def main(argv: list[str] | None = None) -> int:
                     preprocess=_config_from_args(args),
                     ocr_source=args.ocr_source,
                     reading_direction=args.reading_direction,
+                    review_policy=args.review_policy,
+                    min_confidence=args.min_confidence,
                 ),
             )
             print(
@@ -184,6 +198,9 @@ def main(argv: list[str] | None = None) -> int:
                         "mode": "hybrid",
                         "status": hybrid.status,
                         "review_required": True,
+                        "lines_needing_review": hybrid.lines_needing_review,
+                        "mean_confidence": hybrid.mean_confidence,
+                        "reading_direction": hybrid.reading_direction,
                         "line_count": hybrid.line_count,
                         "engine_counts": hybrid.engine_counts,
                         "fallback_count": hybrid.fallback_count,
@@ -342,6 +359,11 @@ def _add_preprocess_flags(
     parser.add_argument("--no-page-crop", action="store_true", help="Do not cut the paper out of a photo")
     parser.add_argument("--deskew-max-degrees", type=float, default=25.0)
     parser.add_argument(
+        "--check-upside-down",
+        action="store_true",
+        help="Compare 0 and 180 degrees using recognizer confidence (two extra short passes per page)",
+    )
+    parser.add_argument(
         "--denoise",
         choices=["median", "nlmeans"],
         default="median",
@@ -402,6 +424,7 @@ def _config_from_args(args: argparse.Namespace) -> PreprocessConfig:
         deskew_max_degrees=getattr(args, "deskew_max_degrees", 25.0),
         enable_orientation=not getattr(args, "no_orientation", False),
         enable_page_crop=not getattr(args, "no_page_crop", False),
+        check_upside_down=getattr(args, "check_upside_down", False),
         denoise_method=args.denoise,
         enable_sharpen=not args.no_sharpen,
         enable_illumination=not args.no_illumination,

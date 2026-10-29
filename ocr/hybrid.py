@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from PIL import Image
 
 from ocr.handwritten_ocr_client import HandwrittenOcrClient, Transcription
 from ocr.line_detection import (
@@ -31,7 +34,6 @@ from ocr.routing import (
     RoutingDecision,
     classify_recognized_script,
     dominant_direction,
-    needs_safety_review,
     route_line,
     should_fallback_to_qwen,
 )
@@ -60,8 +62,19 @@ class HybridConfig:
     # Order of boxes that share a row: "auto" follows the recognized script (right to
     # left when most letters are Arabic), or force "ltr" / "rtl".
     reading_direction: str = "auto"
+    # Per-line review flags. "risk": flag lines with a concrete reason (failed, low
+    # confidence, numbers, [illegible], repetition). "all": flag every line.
+    # min_confidence is an UNCALIBRATED starting point; tune it on a labelled set.
+    review_policy: str = "risk"
+    min_confidence: float = 0.75
+    # When a page looks sideways, let the recognizer's confidence pick the direction.
+    orientation_by_recognizer: bool = True
 
     def __post_init__(self) -> None:
+        if self.review_policy not in {"risk", "all"}:
+            raise ValueError("review_policy must be 'risk' or 'all'")
+        if not 0.0 <= self.min_confidence <= 1.0:
+            raise ValueError("min_confidence must be between 0 and 1")
         if self.ocr_source not in {"aligned", "processed"}:
             raise ValueError("ocr_source must be 'aligned' or 'processed'")
         if self.reading_direction not in {"auto", "ltr", "rtl"}:
@@ -86,6 +99,9 @@ class LineOcrResult:
     fallback_reason: str | None = None
     script_after_ocr: str | None = None
     row_id: int = 0
+    # Geometric-mean token probability of the chosen engine. Ranks lines for review; not an accuracy.
+    confidence: float | None = None
+    review_reasons: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -115,11 +131,15 @@ class HybridResult:
     preprocess_variant: str | None = None
     preprocess_steps: list[str] = field(default_factory=list)
     reading_direction: str = "ltr"
+    lines_needing_review: int = 0
+    mean_confidence: float | None = None
 
     def to_dict(self) -> dict:
         return {
             "source": self.source,
             "reading_direction": self.reading_direction,
+            "lines_needing_review": self.lines_needing_review,
+            "mean_confidence": self.mean_confidence,
             "width": self.width,
             "height": self.height,
             "processed_width": self.processed_width,
@@ -165,7 +185,8 @@ def run_hybrid(
         return result
 
     try:
-        prepared = prepare_hybrid_page(page, info, config.preprocess)
+        scorer = make_orientation_scorer(qwen_client) if config.orientation_by_recognizer else None
+        prepared = prepare_hybrid_page(page, info, config.preprocess, scorer)
     except Exception as exc:
         warnings.append(f"preprocessing failed: {type(exc).__name__}: {exc}")
         result = _error_result(source, destination, warnings, config, exc)
@@ -262,6 +283,8 @@ def run_hybrid(
         preprocess_variant=prepared.variant.name,
         preprocess_steps=list(prepared.variant.steps),
         reading_direction=direction,
+        lines_needing_review=sum(1 for item in line_results if item.review_required),
+        mean_confidence=_mean([item.confidence for item in line_results if item.confidence is not None]),
     )
     if destination is not None:
         _write_hybrid_outputs(result, destination, prepared=prepared)
@@ -307,11 +330,12 @@ def _recognize_line(
 ) -> tuple[LineOcrResult, bool, float]:
     decision = route_line(line.image, config.routing)
     warnings = list(line.warnings) + list(decision.warnings)
-    review = True
     fallback_text = None
     fallback_reason = None
     used_fallback = False
     elapsed = 0.0
+    confidence: float | None = None
+    quality: list[str] = []
 
     if decision.engine == ENGINE_TROCR:
         trocr = _run_trocr(trocr_client, line, source)
@@ -319,6 +343,7 @@ def _recognize_line(
         raw = trocr.text
         status = trocr.status
         engine = ENGINE_TROCR
+        confidence = trocr.confidence
         if should_fallback_to_qwen(raw, status, config.routing):
             qwen = _run_qwen(qwen_client, line)
             elapsed += qwen.latency_ms
@@ -333,6 +358,8 @@ def _recognize_line(
                 raw = qwen.text
                 status = qwen.status
                 engine = ENGINE_QWEN_FALLBACK
+                confidence = qwen.confidence
+                quality = list(qwen.quality_warnings)
         elif config.dual_compare:
             qwen = _run_qwen(qwen_client, line)
             elapsed += qwen.latency_ms
@@ -345,15 +372,24 @@ def _recognize_line(
         raw = qwen.text
         status = qwen.status
         engine = ENGINE_QWEN
+        confidence = qwen.confidence
+        quality = list(qwen.quality_warnings)
         if qwen.error:
             warnings.append(qwen.error)
 
     script = classify_recognized_script(raw)
-    if needs_safety_review(raw) or not raw or status != "success":
-        review = True
-        warnings.append("safety-critical or empty/failed line; visual check required")
-    if line.warnings:
-        review = True
+    reasons = review_reasons(
+        raw=raw,
+        status=status,
+        confidence=confidence,
+        quality_warnings=quality,
+        line_warnings=line.warnings,
+        used_fallback=used_fallback,
+        config=config,
+    )
+    if reasons:
+        warnings.append("review: " + ", ".join(reasons))
+    review = bool(reasons)
 
     return (
         LineOcrResult(
@@ -373,10 +409,81 @@ def _recognize_line(
             fallback_reason=fallback_reason,
             script_after_ocr=script,
             row_id=line.row_id,
+            confidence=confidence,
+            review_reasons=reasons,
         ),
         used_fallback,
         elapsed,
     )
+
+
+_NUMBER = re.compile(r"[0-9\u0660-\u0669\u06f0-\u06f9]")
+_REPETITION_HINTS = ("repeat", "duplicate", "loop")
+
+
+def make_orientation_scorer(client, probe_side: int = 800):
+    """Score a candidate page orientation by how confidently the recognizer reads it.
+
+    Runs only when the page looks sideways (or check_upside_down is on). The probe is
+    a downsized copy, so each candidate costs one short recognition pass.
+    """
+
+    def score(array):
+        image = Image.fromarray(array).convert("RGB")
+        longest = max(image.size)
+        if longest > probe_side:
+            factor = probe_side / longest
+            image = image.resize((max(1, int(image.width * factor)), max(1, int(image.height * factor))), Image.Resampling.LANCZOS)
+        result = client.transcribe(image, preprocessing_method="orientation_probe")
+        if result.status != "success" or not result.text:
+            return None
+        return getattr(result, "confidence", None)
+
+    return score
+
+
+def review_reasons(
+    *,
+    raw: str | None,
+    status: str | None,
+    confidence: float | None,
+    quality_warnings: list[str],
+    line_warnings: list[str],
+    used_fallback: bool,
+    config: HybridConfig,
+) -> list[str]:
+    """Concrete reasons a person should look at this line. Empty means no specific concern.
+
+    A page as a whole still needs human review; this ranks which lines to look at first.
+    """
+    reasons: list[str] = []
+    if config.review_policy == "all":
+        reasons.append("policy_all")
+    if not raw or status != "success":
+        reasons.append("failed_or_empty")
+        return reasons
+    if confidence is not None and confidence < config.min_confidence:
+        reasons.append(f"low_confidence({confidence:.2f}<{config.min_confidence:.2f})")
+    if _NUMBER.search(raw) or needs_safety_review_numbers(raw):
+        reasons.append("contains_numbers_or_dosage")
+    if "[illegible]" in raw.lower():
+        reasons.append("illegible_marker")
+    if any(hint in warning.lower() for warning in quality_warnings for hint in _REPETITION_HINTS):
+        reasons.append("possible_repetition")
+    if line_warnings:
+        reasons.append("line_detection_warning")
+    if used_fallback:
+        reasons.append("engine_fallback")
+    return reasons
+
+
+def needs_safety_review_numbers(raw: str) -> bool:
+    """Dosage-like text: a number next to a unit such as mg, ml, مجم, مل."""
+    return bool(re.search(r"\b(mg|mcg|ml|g|iu|tab|tabs|cap|caps)\b|مجم|ملجم|مل|جم|قرص|كبسولة", raw, re.IGNORECASE))
+
+
+def _mean(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 4) if values else None
 
 
 def _run_qwen(client: HandwrittenOcrClient, line: DetectedLine) -> Transcription:

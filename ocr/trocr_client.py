@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from ocr.config import TROCR_MODEL_ID, default_trocr_checkpoint_dir, inference_context, load_dotenv, resolve_device
+from ocr.confidence import TokenStats, make_recorder
 from ocr.crops import CropSpec
 from ocr.tiling import plan_segments
 
@@ -113,6 +114,7 @@ class TrocrCropResult:
     language: str = "en"
     source: str | None = None
     path: str | None = None
+    confidence: float | None = None  # geometric-mean token probability; not an accuracy
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -127,6 +129,8 @@ class TrocrCropResult:
         }
         if self.path:
             payload["path"] = self.path
+        if self.confidence is not None:
+            payload["confidence"] = round(self.confidence, 4)
         return payload
 
 
@@ -203,6 +207,7 @@ class TrocrClient:
         self._model = None
         self._processor = None
         self.device = "cpu"
+        self._last_stats = TokenStats()
 
     def _default_loader(self, path: Path):
         self.device = resolve_device(self.config.device)
@@ -314,10 +319,12 @@ class TrocrClient:
         failed = next((item for item in results if item.status != STATUS_SUCCESS), None)
         if failed is not None:
             return failed
+        confidences = [item.confidence for item in results if item.confidence is not None]
         return TrocrCropResult(
             crop_id=crop_id,
             status=STATUS_SUCCESS,
             text=" ".join(item.text for item in results if item.text),
+            confidence=min(confidences) if confidences else None,  # a line is as sure as its weakest piece
             latency_ms=sum(item.latency_ms for item in results),
             box=list(box) if box else None,
             language="en",
@@ -495,6 +502,7 @@ class TrocrClient:
             language=crop.language,
             source=crop.source,
             path=crop.path,
+            confidence=self._last_stats.confidence,
         )
 
     def _generate(
@@ -513,11 +521,17 @@ class TrocrClient:
             if max_new_tokens is None
             else max_new_tokens
         )
+        recorder, processors = make_recorder()
+        extra = {"logits_processor": processors} if processors is not None else {}
+        self._last_stats = TokenStats()
         with inference_context():
             generated = model.generate(
                 pixel_values,
                 max_new_tokens=tokens,
+                **extra,
             )
+        if recorder is not None:
+            self._last_stats = recorder.stats()
         decoded = processor.batch_decode(generated, skip_special_tokens=True)
         return decoded[0].strip()
 
