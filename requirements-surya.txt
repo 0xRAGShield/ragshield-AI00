@@ -1,0 +1,7 @@
+# Optional: Surya engine. Needs an inference backend as well as this package:
+#   NVIDIA GPU:        Docker + NVIDIA Container Toolkit (vLLM is started for you)
+#   CPU / Apple chip:  the llama-server binary from llama.cpp
+# or point SURYA_INFERENCE_URL at a server that is already running.
+# LICENCE: weights are free for research, personal use and small startups; broader
+# commercial use needs a licence from the vendor. Read it before client work.
+surya-ocr>=0.23
