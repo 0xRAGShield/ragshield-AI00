@@ -95,18 +95,56 @@ def test_loader_is_offline_and_local(tmp_path: Path) -> None:
     assert "api.mistral.ai" not in (result.error or "")
 
 
-def test_refuses_a_different_model_id() -> None:
-    os.environ["HANDWRITTEN_OCR_MODEL"] = "some/other-model"
-    try:
-        try:
-            HandwrittenOcrConfig.from_env()
-        except LocalModelError as exc:
-            assert MODEL_ID in str(exc)
-        else:
-            raise AssertionError("other model ids must be refused")
-    finally:
-        os.environ.pop("HANDWRITTEN_OCR_MODEL", None)
+def test_other_model_ids_are_accepted_and_reported(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OCR_MODELS_DIR", str(tmp_path))
+    monkeypatch.setenv("HANDWRITTEN_OCR_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct")
+    config = HandwrittenOcrConfig.from_env()
+    assert config.model == "Qwen/Qwen2.5-VL-7B-Instruct"
+    assert config.resolved_checkpoint_dir() == tmp_path / "Qwen__Qwen2.5-VL-7B-Instruct"
+    assert config.base_url.endswith("Qwen__Qwen2.5-VL-7B-Instruct")
 
+
+def test_explicit_checkpoint_dir_and_loading_options_come_from_env(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HANDWRITTEN_OCR_CHECKPOINT_DIR", str(tmp_path / "mine"))
+    monkeypatch.setenv("HANDWRITTEN_OCR_ATTN", "sdpa")
+    monkeypatch.setenv("HANDWRITTEN_OCR_MAX_PIXELS", "1003520")
+    config = HandwrittenOcrConfig.from_env()
+    assert config.resolved_checkpoint_dir() == tmp_path / "mine"
+    assert (config.attn_implementation, config.max_pixels) == ("sdpa", 1003520)
+
+
+def test_generic_checkpoint_check_names_what_is_missing(tmp_path: Path) -> None:
+    from ocr.handwritten_ocr_client import missing_checkpoint_files
+
+    folder = tmp_path / "other"
+    folder.mkdir()
+    assert len(missing_checkpoint_files(folder, "org/other")) == 4
+    (folder / "config.json").write_text("{}")
+    (folder / "tokenizer_config.json").write_text("{}")
+    (folder / "preprocessor_config.json").write_text("{}")
+    assert missing_checkpoint_files(folder, "org/other") == ["model weights (*.safetensors or pytorch_model*.bin)"]
+    (folder / "model-00001-of-00004.safetensors").write_bytes(b"x")
+    assert missing_checkpoint_files(folder, "org/other") == []
+    assert missing_checkpoint_files(folder, MODEL_ID)  # the default model still needs its exact file set
+
+
+def test_a_non_default_model_loads_through_the_generic_loader(monkeypatch, tmp_path: Path) -> None:
+    from ocr import handwritten_ocr_client as module
+
+    folder = tmp_path / "cache" / "org__vl-model"
+    folder.mkdir(parents=True)
+    for name in ("config.json", "tokenizer.json", "preprocessor_config.json", "model.safetensors"):
+        (folder / name).write_bytes(b"{}")
+    seen = {}
+
+    class _Model:
+        generation_config = None
+
+    monkeypatch.setattr(module, "_load_from_disk", lambda path, device, dtype, **kw: seen.update(kw, path=path) or (_Model(), object()))
+    client = HandwrittenOcrClient(HandwrittenOcrConfig(model="org/vl-model", cache_dir=tmp_path / "cache", attn_implementation="sdpa", max_pixels=500000))
+    client.ensure_ready()
+    assert seen["path"] == folder
+    assert (seen["model_id"], seen["attn_implementation"], seen["max_pixels"]) == ("org/vl-model", "sdpa", 500000)
 
 def test_pipeline_saves_the_client_text_without_loading_weights(tmp_path: Path) -> None:
     image_path = tmp_path / "page.png"

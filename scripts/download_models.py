@@ -27,11 +27,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--dest", type=Path, default=None, help="Cache directory (default: from env or ~/.cache)")
     parser.add_argument("--only", choices=("qwen", "trocr"), default=None, help="Download just one model")
+    parser.add_argument(
+        "--model-id",
+        default=None,
+        help="Download any Hugging Face model (for example Qwen/Qwen2.5-VL-7B-Instruct) into <dest>/<org>__<name>.\n"
+        "Then set HANDWRITTEN_OCR_MODEL to the same id.",
+    )
     args = parser.parse_args(argv)
 
     from huggingface_hub import snapshot_download
 
     root = args.dest or default_cache_dir()
+    if args.model_id:
+        local_dir = root / args.model_id.strip().replace("/", "__")
+        print(f"Downloading {args.model_id} -> {local_dir}")
+        snapshot_download(repo_id=args.model_id.strip(), local_dir=str(local_dir))
+        print("Download completed.")
+        return 0
     targets = {"qwen": (QWEN_MODEL_ID, QWEN_DIRNAME), "trocr": (TROCR_MODEL_ID, TROCR_DIRNAME)}
     for key, (repo_id, dirname) in targets.items():
         if args.only and args.only != key:

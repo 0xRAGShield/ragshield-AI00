@@ -17,7 +17,32 @@ from ocr.preprocessing import Variant
 from ocr.tiling import needs_tiling, plan_bands
 
 MODEL_ID = "sherif1313/Arabic-English-handwritten-OCR-v3"
-_CHECKPOINT_DIRNAME = "sherif1313__Arabic-English-handwritten-OCR-v3"
+_CHECKPOINT_DIRNAME = "sherif1313__Arabic-English-handwritten-OCR-v3"  # == model_dirname(MODEL_ID)
+
+
+def model_dirname(model_id: str) -> str:
+    """Folder name used for a model inside the cache: org/name -> org__name."""
+    return model_id.strip().replace("/", "__")
+
+
+def missing_checkpoint_files(path: Path, model_id: str) -> list[str]:
+    """What a local checkpoint folder lacks. The default model has an exact file list;
+    any other Qwen-VL style checkpoint is checked for the essentials."""
+    if model_id == MODEL_ID:
+        return [name for name in REQUIRED_FILES if not (path / name).is_file()]
+    missing: list[str] = []
+    if not (path / "config.json").is_file():
+        missing.append("config.json")
+    if not any((path / name).is_file() for name in ("tokenizer.json", "tokenizer_config.json")):
+        missing.append("tokenizer.json or tokenizer_config.json")
+    if not any((path / name).is_file() for name in ("preprocessor_config.json", "processor_config.json")):
+        missing.append("preprocessor_config.json or processor_config.json")
+    has_weights = any(path.glob("*.safetensors")) or any(path.glob("pytorch_model*.bin")) if path.is_dir() else False
+    if not has_weights:
+        missing.append("model weights (*.safetensors or pytorch_model*.bin)")
+    return missing
+
+
 REQUIRED_FILES = (
     "config.json",
     "generation_config.json",
@@ -101,23 +126,36 @@ class HandwrittenOcrConfig:
     # "general" (any document) or "prescription" (conservative, medical wording).
     prompt_mode: str = "general"
     prompt_text: str | None = None
+    # Use any local Qwen-VL style checkpoint: set ``model`` to its Hugging Face id (the
+    # folder is <cache>/<org>__<name>) or point ``checkpoint_dir`` at a folder directly.
+    checkpoint_dir: Path | None = None
+    # Optional loading knobs. None keeps the library default.
+    attn_implementation: str | None = None  # e.g. "sdpa" or "flash_attention_2"
+    max_pixels: int | None = None  # Qwen processors resize to at most this many pixels
     # Local file URI only. Present so reports keep a base_url field without a host.
     base_url: str = ""
 
     def __post_init__(self) -> None:
         self.cache_dir = Path(self.cache_dir)
+        if self.checkpoint_dir is not None:
+            self.checkpoint_dir = Path(self.checkpoint_dir)
         if not self.base_url:
-            self.base_url = (self.cache_dir / _CHECKPOINT_DIRNAME).as_uri()
+            self.base_url = self.resolved_checkpoint_dir().as_uri()
+
+    def resolved_checkpoint_dir(self) -> Path:
+        if self.checkpoint_dir is not None:
+            return self.checkpoint_dir
+        return self.cache_dir / model_dirname(self.model)
 
     @classmethod
     def from_env(cls) -> "HandwrittenOcrConfig":
         load_dotenv()
-        model = os.environ.get("HANDWRITTEN_OCR_MODEL", MODEL_ID).strip()
-        if model != MODEL_ID:
-            raise LocalModelError(
-                f"This client only loads {MODEL_ID}. Refusing {model}."
-            )
+        model = os.environ.get("HANDWRITTEN_OCR_MODEL", MODEL_ID).strip() or MODEL_ID
         cache_dir = default_cache_dir()
+        explicit_dir = os.environ.get("HANDWRITTEN_OCR_CHECKPOINT_DIR", "").strip()
+        attn = os.environ.get("HANDWRITTEN_OCR_ATTN", "").strip() or None
+        max_pixels_raw = os.environ.get("HANDWRITTEN_OCR_MAX_PIXELS", "").strip()
+        max_pixels = int(max_pixels_raw) if max_pixels_raw else None
         max_new_tokens = int(os.environ.get("HANDWRITTEN_OCR_MAX_NEW_TOKENS", "512"))
         repetition_penalty = float(
             os.environ.get("HANDWRITTEN_OCR_REPETITION_PENALTY", "1.05")
@@ -128,10 +166,12 @@ class HandwrittenOcrConfig:
         tile_pages = os.environ.get("HANDWRITTEN_OCR_TILE_PAGES", "1").strip().lower() not in {"0", "false", "no", "off"}
         prompt_mode = os.environ.get("HANDWRITTEN_OCR_PROMPT_MODE", "general").strip().lower() or "general"
         prompt_for(prompt_mode)  # fail early on a typo
-        checkpoint = cache_dir / _CHECKPOINT_DIRNAME
         return cls(
             model=model,
             cache_dir=cache_dir,
+            checkpoint_dir=Path(explicit_dir).expanduser() if explicit_dir else None,
+            attn_implementation=attn,
+            max_pixels=max_pixels,
             device=os.environ.get("HANDWRITTEN_OCR_DEVICE", "auto").strip() or "auto",
             dtype=os.environ.get("HANDWRITTEN_OCR_DTYPE", "auto").strip() or "auto",
             max_new_tokens=max_new_tokens,
@@ -139,7 +179,6 @@ class HandwrittenOcrConfig:
             max_image_side=max_image_side,
             tile_pages=tile_pages,
             prompt_mode=prompt_mode,
-            base_url=checkpoint.as_uri(),
         )
 
 
@@ -183,7 +222,7 @@ class Transcription:
 
 
 class HandwrittenOcrClient:
-    """Loads `sherif1313/Arabic-English-handwritten-OCR-v3` once, from disk."""
+    """Loads one local Qwen-VL style checkpoint once, from disk. Default: sherif1313/Arabic-English-handwritten-OCR-v3."""
 
     def __init__(
         self,
@@ -191,11 +230,6 @@ class HandwrittenOcrClient:
         loader: Callable[[Path], tuple[Any, Any]] | None = None,
     ) -> None:
         self.config = config or HandwrittenOcrConfig()
-        if self.config.model != MODEL_ID:
-            raise LocalModelError(
-                f"This client only loads {MODEL_ID}. "
-                f"Refusing {self.config.model}."
-            )
         self._loader = loader or self._default_loader
         self._model = None
         self._processor = None
@@ -241,7 +275,7 @@ class HandwrittenOcrClient:
         if self._model is not None:
             return
         path = self.checkpoint_dir()
-        missing = [name for name in REQUIRED_FILES if not (path / name).is_file()]
+        missing = missing_checkpoint_files(path, self.config.model)
         if missing:
             listed = ", ".join(missing)
             raise LocalModelError(
@@ -258,10 +292,15 @@ class HandwrittenOcrClient:
     def _default_loader(self, path: Path):
         self.device = resolve_device(self.config.device)
         dtype = resolve_dtype(self.config.dtype, self.device)
-        return _load_from_disk(path, self.device, dtype)
+        return _load_from_disk(
+            path, self.device, dtype,
+            model_id=self.config.model,
+            attn_implementation=self.config.attn_implementation,
+            max_pixels=self.config.max_pixels,
+        )
 
     def checkpoint_dir(self) -> Path:
-        return Path(self.config.cache_dir) / _CHECKPOINT_DIRNAME
+        return self.config.resolved_checkpoint_dir()
 
     def _apply_greedy_generation_config(self) -> None:
         """Keep greedy decoding. Neutralize sampling fields on the checkpoint.
@@ -421,18 +460,42 @@ def _as_pil(image: Image.Image | np.ndarray | Variant) -> Image.Image:
     return Image.fromarray(array).convert("RGB")
 
 
-def _load_from_disk(path: Path, device: str = "cpu", dtype: str = "float32"):
-    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+def _load_from_disk(
+    path: Path,
+    device: str = "cpu",
+    dtype: str = "float32",
+    model_id: str = MODEL_ID,
+    attn_implementation: str | None = None,
+    max_pixels: int | None = None,
+):
+    """Load a local Qwen-VL style checkpoint. Nothing is downloaded.
 
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        str(path),
-        local_files_only=True,
-        torch_dtype=dtype,
-        low_cpu_mem_usage=True,
-    )
+    The default model keeps its exact class. Any other checkpoint goes through
+    ``AutoModelForImageTextToText`` so newer Qwen-VL generations load too.
+    """
+    from transformers import AutoProcessor
+
+    if model_id == MODEL_ID:
+        from transformers import Qwen2_5_VLForConditionalGeneration as model_class
+    else:
+        from transformers import AutoModelForImageTextToText as model_class
+
+    kwargs = {"local_files_only": True, "torch_dtype": dtype, "low_cpu_mem_usage": True}
+    if attn_implementation:
+        kwargs["attn_implementation"] = attn_implementation
+    model = model_class.from_pretrained(str(path), **kwargs)
     model.to(device)
     model.eval()
-    processor = AutoProcessor.from_pretrained(str(path), local_files_only=True)
+    processor_kwargs = {"local_files_only": True}
+    if max_pixels:
+        processor_kwargs["max_pixels"] = max_pixels
+    try:
+        processor = AutoProcessor.from_pretrained(str(path), **processor_kwargs)
+    except (TypeError, ValueError):
+        if not max_pixels:
+            raise
+        # Some processors take the limit through `size` instead; keep going without it.
+        processor = AutoProcessor.from_pretrained(str(path), local_files_only=True)
     return model, processor
 
 
