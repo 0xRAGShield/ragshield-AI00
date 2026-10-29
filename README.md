@@ -79,6 +79,15 @@ python -m ocr triage --input data/images --out outputs/triage --run-ocr  # adds 
 python scripts/compare_triage.py outputs/triage_before outputs/triage_after
 ```
 
+To measure whether a change helped, run the same folder through the old and the new code and diff the results.
+This works against the original `OCR` branch too:
+
+```bash
+python -m ocr run-images --input data/images --out outputs/before --variant original   # on the old branch
+python -m ocr run-images --input data/images --out outputs/after  --variant original   # on this branch
+python scripts/compare_run_images.py outputs/before outputs/after
+```
+
 Put a `<image>.txt` with the correct text next to an image to get its CER. Triage writes `triage.csv`,
 `triage_summary.md` (images grouped as `input_quality`, `detection`, `recognition`) and an overlay image per page
 with the detected boxes. The thresholds are rules of thumb. Open the overlays and judge for yourself.
