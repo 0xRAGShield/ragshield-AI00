@@ -7,7 +7,6 @@
   "test_image_dir": "dataset/RxHandBD-ML/Test_Set",
   "raw_csv": "dataset/RxHandBD-Raw/Prescription_Labels.csv",
   "image_dirs": [],
-  "source_checkpoint_dir": "D:\\OCR_Models\\hf_cache\\microsoft__trocr-base-handwritten",
   "model_id": "microsoft/trocr-base-handwritten",
   "output_dir": "outputs/trocr_finetune/run",
   "seed": 42,

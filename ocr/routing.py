@@ -118,6 +118,18 @@ def route_line(
     )
 
 
+def dominant_direction(texts) -> str:
+    """"rtl" when most letters are Arabic, otherwise "ltr". Digits and punctuation are ignored."""
+    arabic = latin = 0
+    for text in texts:
+        if text:
+            arabic += len(_ARABIC.findall(text))
+            latin += len(_LATIN.findall(text))
+    if arabic + latin == 0:
+        return "ltr"
+    return "rtl" if arabic / (arabic + latin) >= 0.5 else "ltr"
+
+
 def classify_recognized_script(text: str | None) -> str:
     if not text or not str(text).strip():
         return "empty"

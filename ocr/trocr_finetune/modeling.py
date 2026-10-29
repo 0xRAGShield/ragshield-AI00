@@ -4,14 +4,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ocr.config import DEFAULT_TROCR_CHECKPOINT_DIR
+from ocr.config import default_trocr_checkpoint_dir
 from ocr.trocr_client import missing_checkpoint_files
 
 
 def assert_not_overwriting_source(output_dir: Path, source_dir: Path) -> None:
     output = output_dir.resolve()
     source = source_dir.resolve()
-    if output == source or source in output.parents or output == DEFAULT_TROCR_CHECKPOINT_DIR.resolve():
+    if output == source or source in output.parents or output == default_trocr_checkpoint_dir().resolve():
         raise ValueError(
             f"Refusing to write fine-tuned weights into the source checkpoint {source}"
         )

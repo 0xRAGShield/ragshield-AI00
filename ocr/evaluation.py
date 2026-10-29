@@ -20,8 +20,17 @@ WER is the same distance on whitespace-separated tokens, divided by the number
 of reference tokens. When the reference is empty, the rate is 0 if the
 prediction is also empty and 1 otherwise.
 
-Failed recognitions are excluded from CER and WER. They are counted in the
-failure rate. Latency is averaged over every attempt, including failures.
+Three views of the error rate are reported per variant:
+
+- ``cer`` / ``wer``: mean of per-item rates over successful items only.
+- ``cer_micro`` / ``wer_micro``: total edits divided by total reference length,
+  over successful items only. Long references weigh more, as they should.
+- ``cer_all`` / ``wer_all``: like micro, but a failed recognition counts as a
+  fully wrong transcription (every reference character or word is an error).
+  This is the honest headline number: failing to read a page is not free.
+
+Failed recognitions are also counted in the failure rate. Latency is averaged
+over every attempt, including failures.
 """
 
 from __future__ import annotations
@@ -101,6 +110,10 @@ class ItemScore:
     wer: float | None
     latency_ms: float | None
     error: str | None = None
+    ref_chars: int = 0
+    char_edits: int = 0
+    ref_words: int = 0
+    word_edits: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -115,6 +128,10 @@ class VariantScore:
     cer: float | None
     wer: float | None
     scored: int
+    cer_micro: float | None = None
+    wer_micro: float | None = None
+    cer_all: float | None = None
+    wer_all: float | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -134,6 +151,19 @@ class EvaluationReport:
         }
 
 
+def _edit_stats(reference: str, hypothesis: str) -> tuple[int, int, int, int]:
+    """Return (char edits, reference chars, word edits, reference words)."""
+    ref = normalize_for_metrics(reference)
+    hyp = normalize_for_metrics(hypothesis)
+    ref_words, hyp_words = ref.split(), hyp.split()
+    return (
+        levenshtein(ref, hyp),
+        len(ref),
+        levenshtein(ref_words, hyp_words),
+        len(ref_words),
+    )
+
+
 def score_predictions(samples: list[dict], predictions: list[dict]) -> EvaluationReport:
     """Score prediction records against dataset samples.
 
@@ -150,6 +180,8 @@ def score_predictions(samples: list[dict], predictions: list[dict]) -> Evaluatio
         status = prediction.get("status", "success")
         latency = prediction.get("latency_ms")
         if status != "success" or prediction.get("text") is None:
+            ref_norm = normalize_for_metrics(references[image_id])
+            ref_word_count = len(ref_norm.split())
             item = ItemScore(
                 image_id=image_id,
                 variant=prediction["variant"],
@@ -158,10 +190,15 @@ def score_predictions(samples: list[dict], predictions: list[dict]) -> Evaluatio
                 wer=None,
                 latency_ms=latency,
                 error=prediction.get("error") or "recognition failed",
+                ref_chars=len(ref_norm),
+                char_edits=len(ref_norm),  # unread page: every character is an error
+                ref_words=ref_word_count,
+                word_edits=ref_word_count,
             )
         else:
             reference = references[image_id]
             hypothesis = prediction["text"]
+            char_edits, ref_chars, word_edits, ref_words = _edit_stats(reference, hypothesis)
             item = ItemScore(
                 image_id=image_id,
                 variant=prediction["variant"],
@@ -170,6 +207,10 @@ def score_predictions(samples: list[dict], predictions: list[dict]) -> Evaluatio
                 wer=round(word_error_rate(reference, hypothesis), 6),
                 latency_ms=latency,
                 error=None,
+                ref_chars=ref_chars,
+                char_edits=char_edits,
+                ref_words=ref_words,
+                word_edits=word_edits,
             )
         items.append(item)
         grouped.setdefault(item.variant, []).append(item)
@@ -190,7 +231,22 @@ def _summarize(variant: str, scores: list[ItemScore]) -> VariantScore:
         cer=(sum(score.cer for score in scored) / len(scored)) if scored else None,
         wer=(sum(score.wer for score in scored) / len(scored)) if scored else None,
         scored=len(scored),
+        cer_micro=_pooled(scored, "char_edits", "ref_chars"),
+        wer_micro=_pooled(scored, "word_edits", "ref_words"),
+        cer_all=_pooled(scores, "char_edits", "ref_chars"),
+        wer_all=_pooled(scores, "word_edits", "ref_words"),
     )
+
+
+def _pooled(scores: list[ItemScore], edits: str, length: str) -> float | None:
+    """Total edits over total reference length. None when nothing was scored."""
+    if not scores:
+        return None
+    total_length = sum(getattr(score, length) for score in scores)
+    total_edits = sum(getattr(score, edits) for score in scores)
+    if total_length == 0:
+        return 0.0 if total_edits == 0 else 1.0
+    return round(total_edits / total_length, 6)
 
 
 def load_dataset(directory: str | Path) -> list[dict]:

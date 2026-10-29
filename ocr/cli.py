@@ -50,9 +50,39 @@ def main(argv: list[str] | None = None) -> int:
         help="Hybrid routing policy. Heuristic only; not a language classifier.",
     )
     transcribe.add_argument(
+        "--ocr-source",
+        default="aligned",
+        choices=("aligned", "processed"),
+        help="Hybrid: recognize original-colour crops (aligned) or the processed grayscale crops",
+    )
+    transcribe.add_argument(
+        "--reading-direction",
+        default="auto",
+        choices=("auto", "ltr", "rtl"),
+        help="Hybrid: order of boxes on one row. auto = right to left when the text is mostly Arabic",
+    )
+    transcribe.add_argument(
+        "--review-policy",
+        default="risk",
+        choices=("risk", "all"),
+        help="Hybrid per-line review flags: only lines with a concrete reason, or every line",
+    )
+    transcribe.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.75,
+        help="Hybrid: lines below this token confidence are flagged. Uncalibrated; tune on labelled data",
+    )
+    transcribe.add_argument(
         "--hybrid-dual",
         action="store_true",
         help="Also run Qwen on TrOCR-routed lines without replacing TrOCR text.",
+    )
+    transcribe.add_argument(
+        "--trocr-line-prep",
+        choices=("pad_square", "stretch", "chunk"),
+        default=None,
+        help="How TrOCR line crops are prepared. Default: TROCR_LINE_PREP or pad_square (unvalidated options)",
     )
     transcribe.add_argument(
         "--trocr-checkpoint",
@@ -65,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     _add_preprocess_flags(transcribe)
+    _add_model_flags(transcribe)
 
     evaluate = sub.add_parser("evaluate", help="Score a predictions JSON file against the dataset")
     evaluate.add_argument("--dataset", type=Path, default=Path("data/eval"))
@@ -79,6 +110,23 @@ def main(argv: list[str] | None = None) -> int:
     real.add_argument("--out", type=Path, default=Path("outputs/real_images"))
     real.add_argument("--variant", default="original", choices=list(VARIANT_NAMES))
     _add_preprocess_flags(real)
+    _add_model_flags(real)
+
+    triage = sub.add_parser(
+        "triage",
+        help="Diagnose why pages fail: input quality, line detection or recognition",
+    )
+    triage.add_argument("--input", type=Path, required=True, help="Folder of images (searched recursively)")
+    triage.add_argument("--out", type=Path, default=Path("outputs/triage"))
+    triage.add_argument(
+        "--run-ocr",
+        action="store_true",
+        help="Also run hybrid OCR (needs the model) to record confidence and CER against <image>.txt",
+    )
+    triage.add_argument("--hybrid-policy", default="qwen_default", choices=("english_line_heuristic", "qwen_default"))
+    triage.add_argument("--trocr-checkpoint", type=Path, default=None)
+    _add_preprocess_flags(triage)
+    _add_model_flags(triage)
 
     serve = sub.add_parser("serve", help="Local page for upload, variants, and OCR")
     serve.add_argument("--host", default="127.0.0.1")
@@ -148,12 +196,16 @@ def main(argv: list[str] | None = None) -> int:
             hybrid = run_hybrid(
                 args.image,
                 args.out,
-                HandwrittenOcrClient(HandwrittenOcrConfig.from_env()),
+                HandwrittenOcrClient(_qwen_config(args)),
                 _trocr_client_from_args(args),
                 HybridConfig(
                     routing=RoutingConfig(policy=args.hybrid_policy),
                     dual_compare=args.hybrid_dual,
                     preprocess=_config_from_args(args),
+                    ocr_source=args.ocr_source,
+                    reading_direction=args.reading_direction,
+                    review_policy=args.review_policy,
+                    min_confidence=args.min_confidence,
                 ),
             )
             print(
@@ -162,6 +214,9 @@ def main(argv: list[str] | None = None) -> int:
                         "mode": "hybrid",
                         "status": hybrid.status,
                         "review_required": True,
+                        "lines_needing_review": hybrid.lines_needing_review,
+                        "mean_confidence": hybrid.mean_confidence,
+                        "reading_direction": hybrid.reading_direction,
                         "line_count": hybrid.line_count,
                         "engine_counts": hybrid.engine_counts,
                         "fallback_count": hybrid.fallback_count,
@@ -176,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0 if hybrid.status != "error" else 1
         if args.engine == "qwen":
-            config = HandwrittenOcrConfig.from_env()
+            config = _qwen_config(args)
             result = compare_image(
                 args.image,
                 HandwrittenOcrClient(config),
@@ -194,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
 
         qwen_client = None
         if args.engine in {"qwen", "compare"}:
-            qwen_client = HandwrittenOcrClient(HandwrittenOcrConfig.from_env())
+            qwen_client = HandwrittenOcrClient(_qwen_config(args))
         trocr_client = _trocr_client_from_args(args)
         compared = recognize_image(
             args.image,
@@ -221,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"variants": [item.to_dict() for item in report.variants]}, indent=2))
         return 0
     if args.command == "run-images":
-        config = HandwrittenOcrConfig.from_env()
+        config = _qwen_config(args)
         report = run_real_images(
             args.input,
             args.out,
@@ -248,6 +303,24 @@ def main(argv: list[str] | None = None) -> int:
         if report.blocker:
             return 2
         return 0 if report.failed == 0 else 1
+    if args.command == "triage":
+        from ocr.triage import run_triage
+
+        runner = None
+        if args.run_ocr:
+            from ocr.hybrid import HybridConfig, run_hybrid
+            from ocr.routing import RoutingConfig
+
+            qwen = HandwrittenOcrClient(_qwen_config(args))
+            trocr = _trocr_client_from_args(args)
+            hybrid_config = HybridConfig(
+                routing=RoutingConfig(policy=args.hybrid_policy), preprocess=_config_from_args(args)
+            )
+            runner = lambda image: run_hybrid(image, None, qwen, trocr, hybrid_config)  # noqa: E731
+        report = run_triage(args.input, args.out, preprocess=_config_from_args(args), runner=runner)
+        print(json.dumps({"images": len(report.rows), "buckets": report.counts(), "out": str(args.out)}, indent=2))
+        print(f"Summary: {args.out / 'triage_summary.md'}")
+        return 0
     if args.command == "serve":
         from ocr.server import serve
 
@@ -316,6 +389,14 @@ def _add_preprocess_flags(
     parser.add_argument("--no-denoise", action="store_true")
     parser.add_argument("--no-clahe", action="store_true")
     parser.add_argument("--no-deskew", action="store_true")
+    parser.add_argument("--no-orientation", action="store_true", help="Do not detect sideways pages")
+    parser.add_argument("--no-page-crop", action="store_true", help="Do not cut the paper out of a photo")
+    parser.add_argument("--deskew-max-degrees", type=float, default=25.0)
+    parser.add_argument(
+        "--check-upside-down",
+        action="store_true",
+        help="Compare 0 and 180 degrees using recognizer confidence (two extra short passes per page)",
+    )
     parser.add_argument(
         "--denoise",
         choices=["median", "nlmeans"],
@@ -335,12 +416,36 @@ def _add_preprocess_flags(
     )
 
 
+def _add_model_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--prompt-mode",
+        choices=("general", "prescription"),
+        default=None,
+        help="Prompt sent to the model. Default: HANDWRITTEN_OCR_PROMPT_MODE or general",
+    )
+    parser.add_argument("--max-image-side", type=int, default=None, help="Longest side sent to the model")
+    parser.add_argument("--no-tiling", action="store_true", help="Send large pages as one image instead of bands")
+
+
+def _qwen_config(args: argparse.Namespace) -> HandwrittenOcrConfig:
+    config = HandwrittenOcrConfig.from_env()
+    if getattr(args, "prompt_mode", None):
+        config.prompt_mode = args.prompt_mode
+    if getattr(args, "max_image_side", None):
+        config.max_image_side = args.max_image_side
+    if getattr(args, "no_tiling", False):
+        config.tile_pages = False
+    return config
+
+
 def _trocr_client_from_args(args: argparse.Namespace) -> TrocrClient:
     config = TrocrConfig.from_env()
     checkpoint = getattr(args, "trocr_checkpoint", None)
     if checkpoint is not None:
         config.checkpoint_dir = Path(checkpoint)
         config.configured = True
+    if getattr(args, "trocr_line_prep", None):
+        config.line_prep = args.trocr_line_prep
     return TrocrClient(config)
 
 
@@ -350,6 +455,10 @@ def _config_from_args(args: argparse.Namespace) -> PreprocessConfig:
         enable_denoise=not args.no_denoise,
         enable_clahe=not args.no_clahe,
         enable_deskew=not args.no_deskew,
+        deskew_max_degrees=getattr(args, "deskew_max_degrees", 25.0),
+        enable_orientation=not getattr(args, "no_orientation", False),
+        enable_page_crop=not getattr(args, "no_page_crop", False),
+        check_upside_down=getattr(args, "check_upside_down", False),
         denoise_method=args.denoise,
         enable_sharpen=not args.no_sharpen,
         enable_illumination=not args.no_illumination,

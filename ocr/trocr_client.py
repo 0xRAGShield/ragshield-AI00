@@ -8,10 +8,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 from PIL import Image
 
-from ocr.config import DEFAULT_TROCR_CHECKPOINT_DIR, TROCR_MODEL_ID, load_dotenv
+from ocr.config import TROCR_MODEL_ID, default_trocr_checkpoint_dir, inference_context, load_dotenv, resolve_device
+from ocr.confidence import TokenStats, make_recorder
 from ocr.crops import CropSpec
+from ocr.tiling import plan_segments
 
 # Files that a local microsoft/trocr-base-handwritten dump normally includes.
 _CONFIG_FILES = ("config.json", "preprocessor_config.json")
@@ -42,6 +45,7 @@ STATUS_CROP_ENTRY_INVALID = "crop_entry_invalid"
 STATUS_SKIPPED_ARABIC = "skipped_arabic"
 STATUS_INFERENCE_FAILURE = "inference_failure"
 STATUS_SUCCESS = "success"
+LINE_PREP_MODES = ("pad_square", "stretch", "chunk")
 
 
 class TrocrLocalError(RuntimeError):
@@ -51,28 +55,42 @@ class TrocrLocalError(RuntimeError):
 @dataclass
 class TrocrConfig:
     model: str = TROCR_MODEL_ID
-    checkpoint_dir: Path = DEFAULT_TROCR_CHECKPOINT_DIR
+    checkpoint_dir: Path = field(default_factory=default_trocr_checkpoint_dir)
     device: str = "cpu"
     max_new_tokens: int = 64
     # Separate from line-crop decoding. A page can be longer than one IAM line.
     full_page_max_new_tokens: int = 256
     configured: bool = True
+    # How a line crop is prepared for the 384x384 ViT input:
+    #   pad_square: pad to a square (keeps proportions, shrinks wide lines a lot). Default.
+    #   stretch:    hand the crop over as is; the processor resizes it. This is how
+    #               the base model saw IAM lines when it was trained.
+    #   chunk:      cut lines wider than ``chunk_aspect`` into pieces at word gaps,
+    #               read each piece stretched, and join the results.
+    # None of these has been validated on this project's data. Compare them with a labelled set.
+    line_prep: str = "pad_square"
+    chunk_aspect: float = 5.0
 
     def __post_init__(self) -> None:
         self.checkpoint_dir = Path(self.checkpoint_dir)
+        if self.line_prep not in LINE_PREP_MODES:
+            raise ValueError(f"line_prep must be one of {LINE_PREP_MODES}, got {self.line_prep!r}")
+        if self.chunk_aspect <= 1:
+            raise ValueError("chunk_aspect must be greater than 1")
 
     @classmethod
     def from_env(cls) -> "TrocrConfig":
         load_dotenv()
         raw = os.environ.get("TROCR_CHECKPOINT_DIR")
         if raw is not None and not raw.strip():
-            return cls(configured=False, checkpoint_dir=DEFAULT_TROCR_CHECKPOINT_DIR)
-        checkpoint_dir = Path(raw.strip()) if raw and raw.strip() else DEFAULT_TROCR_CHECKPOINT_DIR
+            return cls(configured=False, checkpoint_dir=default_trocr_checkpoint_dir())
+        checkpoint_dir = Path(raw.strip()) if raw and raw.strip() else default_trocr_checkpoint_dir()
         device = os.environ.get("TROCR_DEVICE", os.environ.get("HANDWRITTEN_OCR_DEVICE", "cpu")).strip() or "cpu"
         max_new_tokens = int(os.environ.get("TROCR_MAX_NEW_TOKENS", "64"))
         full_page_max_new_tokens = int(
             os.environ.get("TROCR_FULL_PAGE_MAX_NEW_TOKENS", "256")
         )
+        line_prep = os.environ.get("TROCR_LINE_PREP", "pad_square").strip().lower() or "pad_square"
         model = os.environ.get("TROCR_MODEL_ID", TROCR_MODEL_ID).strip() or TROCR_MODEL_ID
         return cls(
             model=model,
@@ -81,6 +99,7 @@ class TrocrConfig:
             max_new_tokens=max_new_tokens,
             full_page_max_new_tokens=full_page_max_new_tokens,
             configured=True,
+            line_prep=line_prep,
         )
 
 
@@ -95,6 +114,7 @@ class TrocrCropResult:
     language: str = "en"
     source: str | None = None
     path: str | None = None
+    confidence: float | None = None  # geometric-mean token probability; not an accuracy
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -109,6 +129,8 @@ class TrocrCropResult:
         }
         if self.path:
             payload["path"] = self.path
+        if self.confidence is not None:
+            payload["confidence"] = round(self.confidence, 4)
         return payload
 
 
@@ -181,9 +203,15 @@ class TrocrClient:
         loader: Callable[[Path], tuple[Any, Any]] | None = None,
     ) -> None:
         self.config = config or TrocrConfig()
-        self._loader = loader or _load_from_disk
+        self._loader = loader or self._default_loader
         self._model = None
         self._processor = None
+        self.device = "cpu"
+        self._last_stats = TokenStats()
+
+    def _default_loader(self, path: Path):
+        self.device = resolve_device(self.config.device)
+        return _load_from_disk(path, self.device)
 
     def inspect(self) -> TrocrBatchResult:
         """Describe readiness without loading weights."""
@@ -279,15 +307,39 @@ class TrocrClient:
                 language="en",
                 source=source,
             )
-        padded = pad_line_keep_aspect(image)
-        spec = CropSpec(
+        pieces = self._prepare_line(image)
+        results = [
+            self._transcribe_one(
+                CropSpec(crop_id=crop_id, image=piece, source=source, box=box, language="en")
+            )
+            for piece in pieces
+        ]
+        if len(results) == 1:
+            return results[0]
+        failed = next((item for item in results if item.status != STATUS_SUCCESS), None)
+        if failed is not None:
+            return failed
+        confidences = [item.confidence for item in results if item.confidence is not None]
+        return TrocrCropResult(
             crop_id=crop_id,
-            image=padded,
-            source=source,
-            box=box,
+            status=STATUS_SUCCESS,
+            text=" ".join(item.text for item in results if item.text),
+            confidence=min(confidences) if confidences else None,  # a line is as sure as its weakest piece
+            latency_ms=sum(item.latency_ms for item in results),
+            box=list(box) if box else None,
             language="en",
+            source=source,
         )
-        return self._transcribe_one(spec)
+
+    def _prepare_line(self, image: Image.Image) -> list[Image.Image]:
+        mode = self.config.line_prep
+        if mode == "stretch":
+            return [_as_rgb(image)]
+        if mode == "chunk":
+            rgb = _as_rgb(image)
+            segments = plan_segments(np.asarray(rgb.convert("L")), self.config.chunk_aspect)
+            return [rgb.crop((left, 0, right, rgb.height)) for left, right in segments]
+        return [pad_line_keep_aspect(image)]
 
     def transcribe_full_page(
         self,
@@ -450,6 +502,7 @@ class TrocrClient:
             language=crop.language,
             source=crop.source,
             path=crop.path,
+            confidence=self._last_stats.confidence,
         )
 
     def _generate(
@@ -457,24 +510,28 @@ class TrocrClient:
         image: Image.Image,
         max_new_tokens: int | None = None,
     ) -> str:
-        import torch
-
         processor = self._processor
         model = self._model
         encoded = processor(images=image, return_tensors="pt")
         pixel_values = encoded["pixel_values"]
         if hasattr(pixel_values, "to"):
-            pixel_values = pixel_values.to(self.config.device)
+            pixel_values = pixel_values.to(self.device)
         tokens = (
             self.config.max_new_tokens
             if max_new_tokens is None
             else max_new_tokens
         )
-        with torch.inference_mode():
+        recorder, processors = make_recorder()
+        extra = {"logits_processor": processors} if processors is not None else {}
+        self._last_stats = TokenStats()
+        with inference_context():
             generated = model.generate(
                 pixel_values,
                 max_new_tokens=tokens,
+                **extra,
             )
+        if recorder is not None:
+            self._last_stats = recorder.stats()
         decoded = processor.batch_decode(generated, skip_special_tokens=True)
         return decoded[0].strip()
 
@@ -501,7 +558,7 @@ def _dependency_error() -> str | None:
     return None
 
 
-def _load_from_disk(path: Path):
+def _load_from_disk(path: Path, device: str = "cpu"):
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
     processor = TrOCRProcessor.from_pretrained(str(path), local_files_only=True)
@@ -509,7 +566,7 @@ def _load_from_disk(path: Path):
         str(path),
         local_files_only=True,
     )
-    model.to("cpu")
+    model.to(device)
     model.eval()
     return model, processor
 

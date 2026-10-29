@@ -1,4 +1,4 @@
-"""Local Arabic-English handwritten OCR. Loads one cached checkpoint on CPU."""
+"""Local Arabic-English handwritten OCR. Loads one cached checkpoint (GPU when available)."""
 
 from __future__ import annotations
 
@@ -11,11 +11,12 @@ from typing import Any, Callable
 import numpy as np
 from PIL import Image
 
-from ocr.config import load_dotenv
+from ocr.config import default_cache_dir, inference_context, load_dotenv, resolve_device, resolve_dtype
+from ocr.confidence import TokenStats, make_recorder
 from ocr.preprocessing import Variant
+from ocr.tiling import needs_tiling, plan_bands
 
 MODEL_ID = "sherif1313/Arabic-English-handwritten-OCR-v3"
-_DEFAULT_CACHE = Path(r"D:\OCR_Models\hf_cache")
 _CHECKPOINT_DIRNAME = "sherif1313__Arabic-English-handwritten-OCR-v3"
 REQUIRED_FILES = (
     "config.json",
@@ -42,6 +43,33 @@ TRANSCRIPTION_PROMPT = (
     "blank lines. Reply with the transcription only."
 )
 
+# General documents: notes, forms, letters, exam papers. Less cautious than the
+# prescription prompt: it asks for a best reading of every word instead of
+# giving up on a whole line.
+GENERAL_PROMPT = (
+    "You are an OCR transcriber. Copy all text that is visibly written or printed "
+    "in the image, in natural reading order. Arabic is written right to left; keep "
+    "Arabic and English, mixed-language lines, numbers, dates, names, and punctuation "
+    "in their original script. Do not translate. Do not summarize, explain, or add "
+    "words that are not on the page. Give your best reading of every word; write "
+    "[illegible] only for a single word that cannot be read at all, and keep "
+    "transcribing the rest of the line. Do not repeat lines or fragments unless they "
+    "are written more than once. Do not add headings, labels, markdown, commentary, "
+    "or extra blank lines. Reply with the transcription only."
+)
+
+PROMPTS = {"general": GENERAL_PROMPT, "prescription": TRANSCRIPTION_PROMPT}
+
+
+def prompt_for(mode: str, custom: str | None = None) -> str:
+    if custom and custom.strip():
+        return custom.strip()
+    try:
+        return PROMPTS[mode]
+    except KeyError:
+        raise ValueError(f"prompt mode must be one of {sorted(PROMPTS)}, got {mode!r}") from None
+
+
 # Heuristic flags only. They do not rewrite text or change operational status.
 _LONG_CHAR_LIMIT = 3500
 _REPEAT_NGRAM = 6
@@ -55,16 +83,24 @@ class LocalModelError(RuntimeError):
 @dataclass
 class HandwrittenOcrConfig:
     model: str = MODEL_ID
-    cache_dir: Path = _DEFAULT_CACHE
-    device: str = "cpu"
-    dtype: str = "float32"
+    cache_dir: Path = field(default_factory=default_cache_dir)
+    # "auto" picks cuda, then mps, then cpu. dtype "auto" is bfloat16/float16 on
+    # CUDA and float32 elsewhere. Override with HANDWRITTEN_OCR_DEVICE / _DTYPE.
+    device: str = "auto"
+    dtype: str = "auto"
     max_new_tokens: int = 512
     # Modest penalty from the checkpoint card. No n-gram ban: repeated doses
     # and instructions can be genuine. Greedy decoding stays deterministic.
     repetition_penalty: float = 1.05
     # Longest side of the tensor sent to the vision encoder. Source files and
     # saved variant PNGs are unchanged. Qwen2.5-VL cost scales with pixels.
-    max_image_side: int = 1280
+    max_image_side: int = 1792
+    # Pages taller than max_image_side at that scale are sent as several bands cut at
+    # blank rows, so handwriting is not shrunk to fit one image.
+    tile_pages: bool = True
+    # "general" (any document) or "prescription" (conservative, medical wording).
+    prompt_mode: str = "general"
+    prompt_text: str | None = None
     # Local file URI only. Present so reports keep a base_url field without a host.
     base_url: str = ""
 
@@ -81,23 +117,28 @@ class HandwrittenOcrConfig:
             raise LocalModelError(
                 f"This client only loads {MODEL_ID}. Refusing {model}."
             )
-        cache_dir = Path(
-            os.environ.get("HANDWRITTEN_OCR_CACHE", str(_DEFAULT_CACHE))
-        )
+        cache_dir = default_cache_dir()
         max_new_tokens = int(os.environ.get("HANDWRITTEN_OCR_MAX_NEW_TOKENS", "512"))
         repetition_penalty = float(
             os.environ.get("HANDWRITTEN_OCR_REPETITION_PENALTY", "1.05")
         )
         max_image_side = int(
-            os.environ.get("HANDWRITTEN_OCR_MAX_IMAGE_SIDE", "1280")
+            os.environ.get("HANDWRITTEN_OCR_MAX_IMAGE_SIDE", "1792")
         )
+        tile_pages = os.environ.get("HANDWRITTEN_OCR_TILE_PAGES", "1").strip().lower() not in {"0", "false", "no", "off"}
+        prompt_mode = os.environ.get("HANDWRITTEN_OCR_PROMPT_MODE", "general").strip().lower() or "general"
+        prompt_for(prompt_mode)  # fail early on a typo
         checkpoint = cache_dir / _CHECKPOINT_DIRNAME
         return cls(
             model=model,
             cache_dir=cache_dir,
+            device=os.environ.get("HANDWRITTEN_OCR_DEVICE", "auto").strip() or "auto",
+            dtype=os.environ.get("HANDWRITTEN_OCR_DTYPE", "auto").strip() or "auto",
             max_new_tokens=max_new_tokens,
             repetition_penalty=repetition_penalty,
             max_image_side=max_image_side,
+            tile_pages=tile_pages,
+            prompt_mode=prompt_mode,
             base_url=checkpoint.as_uri(),
         )
 
@@ -113,6 +154,11 @@ class Transcription:
     served_model: str | None = None
     raw_text: str | None = None
     quality_warnings: list[str] = field(default_factory=list)
+    # Geometric-mean probability of the decoded tokens. A ranking signal for review,
+    # not an accuracy. None when it could not be measured.
+    confidence: float | None = None
+    min_token_prob: float | None = None
+    low_confidence_fraction: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -127,6 +173,12 @@ class Transcription:
             payload["raw_text"] = self.raw_text
         if self.quality_warnings:
             payload["quality_warnings"] = list(self.quality_warnings)
+        if self.confidence is not None:
+            payload["confidence"] = round(self.confidence, 4)
+            payload["min_token_prob"] = round(self.min_token_prob, 4) if self.min_token_prob is not None else None
+            payload["low_confidence_fraction"] = (
+                round(self.low_confidence_fraction, 4) if self.low_confidence_fraction is not None else None
+            )
         return payload
 
 
@@ -144,9 +196,11 @@ class HandwrittenOcrClient:
                 f"This client only loads {MODEL_ID}. "
                 f"Refusing {self.config.model}."
             )
-        self._loader = loader or _load_from_disk
+        self._loader = loader or self._default_loader
         self._model = None
         self._processor = None
+        self.device = "cpu"
+        self._last_stats = TokenStats()
 
     def transcribe(
         self,
@@ -154,9 +208,11 @@ class HandwrittenOcrClient:
         preprocessing_method: str,
     ) -> Transcription:
         started = time.perf_counter()
+        notes: list[str] = []
+        stats = TokenStats()
         try:
             self.ensure_ready()
-            text = self._generate(_as_pil(image))
+            text = self._generate_page(_as_pil(image), notes, stats)
         except Exception as exc:
             return Transcription(
                 text=None,
@@ -167,7 +223,7 @@ class HandwrittenOcrClient:
                 error=_public_error(exc),
             )
         raw = text
-        warnings = diagnose_transcription(raw)
+        warnings = notes + diagnose_transcription(raw)
         return Transcription(
             text=raw,
             raw_text=raw,
@@ -176,6 +232,9 @@ class HandwrittenOcrClient:
             preprocessing_method=preprocessing_method,
             latency_ms=(time.perf_counter() - started) * 1000,
             quality_warnings=warnings,
+            confidence=stats.confidence,
+            min_token_prob=stats.min_token_prob,
+            low_confidence_fraction=stats.low_fraction,
         )
 
     def ensure_ready(self) -> None:
@@ -195,6 +254,11 @@ class HandwrittenOcrClient:
         os.environ["HF_HOME"] = str(self.config.cache_dir)
         self._model, self._processor = self._loader(path)
         self._apply_greedy_generation_config()
+
+    def _default_loader(self, path: Path):
+        self.device = resolve_device(self.config.device)
+        dtype = resolve_dtype(self.config.dtype, self.device)
+        return _load_from_disk(path, self.device, dtype)
 
     def checkpoint_dir(self) -> Path:
         return Path(self.config.cache_dir) / _CHECKPOINT_DIRNAME
@@ -219,9 +283,25 @@ class HandwrittenOcrClient:
         if hasattr(gen, "top_k"):
             gen.top_k = None
 
-    def _generate(self, image: Image.Image) -> str:
-        import torch
+    def _generate_page(self, image: Image.Image, notes: list[str], stats: TokenStats | None = None) -> str:
+        """Run one image, or several bands when the page is too large for one call."""
+        width, height = image.size
+        if self.config.tile_pages and needs_tiling(width, height, self.config.max_image_side):
+            bands = plan_bands(np.asarray(image.convert("L")), self.config.max_image_side)
+            if len(bands) > 1:
+                notes.append(f"large page split into {len(bands)} bands at blank rows")
+                parts = []
+                for top, bottom in bands:
+                    parts.append(self._generate(image.crop((0, top, width, bottom))))
+                    if stats is not None:
+                        stats.merge(self._last_stats)
+                return "\n".join(part for part in parts if part)
+        text = self._generate(image)
+        if stats is not None:
+            stats.merge(self._last_stats)
+        return text
 
+    def _generate(self, image: Image.Image) -> str:
         model = self._model
         processor = self._processor
         prepared = _limit_image_side(image, self.config.max_image_side)
@@ -230,7 +310,7 @@ class HandwrittenOcrClient:
                 "role": "user",
                 "content": [
                     {"type": "image", "image": prepared},
-                    {"type": "text", "text": TRANSCRIPTION_PROMPT},
+                    {"type": "text", "text": prompt_for(self.config.prompt_mode, self.config.prompt_text)},
                 ],
             }
         ]
@@ -245,11 +325,15 @@ class HandwrittenOcrClient:
             padding=True,
             return_tensors="pt",
         )
+        target = getattr(model, "device", None) or self.device
         inputs = {
-            key: value.to("cpu") if hasattr(value, "to") else value
+            key: value.to(target) if hasattr(value, "to") else value
             for key, value in inputs.items()
         }
-        with torch.inference_mode():
+        recorder, processors = make_recorder()
+        extra = {"logits_processor": processors} if processors is not None else {}
+        self._last_stats = TokenStats()
+        with inference_context():
             generated = model.generate(
                 **inputs,
                 max_new_tokens=self.config.max_new_tokens,
@@ -258,7 +342,10 @@ class HandwrittenOcrClient:
                 pad_token_id=processor.tokenizer.eos_token_id,
                 eos_token_id=processor.tokenizer.eos_token_id,
                 num_return_sequences=1,
+                **extra,
             )
+        if recorder is not None:
+            self._last_stats = recorder.stats()
         trimmed = generated[:, inputs["input_ids"].shape[1] :]
         decoded = processor.batch_decode(
             trimmed,
@@ -334,16 +421,16 @@ def _as_pil(image: Image.Image | np.ndarray | Variant) -> Image.Image:
     return Image.fromarray(array).convert("RGB")
 
 
-def _load_from_disk(path: Path):
+def _load_from_disk(path: Path, device: str = "cpu", dtype: str = "float32"):
     from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         str(path),
         local_files_only=True,
-        torch_dtype="float32",
+        torch_dtype=dtype,
         low_cpu_mem_usage=True,
     )
-    model.to("cpu")
+    model.to(device)
     model.eval()
     processor = AutoProcessor.from_pretrained(str(path), local_files_only=True)
     return model, processor

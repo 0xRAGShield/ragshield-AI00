@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+
+import numpy as np
 from types import SimpleNamespace
 
 from PIL import Image, ImageDraw
@@ -154,9 +156,9 @@ def test_hybrid_calls_full_combined_preprocess(monkeypatch, tmp_path):
 
     calls = []
 
-    def wrapped(image, info, config):
+    def wrapped(image, info, config, *args, **kwargs):
         calls.append(config)
-        return real_prepare(image, info, config)
+        return real_prepare(image, info, config, *args, **kwargs)
 
     monkeypatch.setattr(hybrid_mod, "prepare_hybrid_page", wrapped)
     path = _prescription(tmp_path / "rx.png")
@@ -293,7 +295,7 @@ def test_cli_config_from_args_maps_no_flags():
 def test_hybrid_preprocessing_failure_is_reported(monkeypatch, tmp_path):
     from ocr import hybrid as hybrid_mod
 
-    def boom(_image, _info, _config):
+    def boom(_image, _info, _config, *_args, **_kwargs):
         raise RuntimeError("synthetic preprocess failure")
 
     monkeypatch.setattr(hybrid_mod, "prepare_hybrid_page", boom)
@@ -343,3 +345,157 @@ def test_cli_qwen_mode_does_not_call_hybrid(monkeypatch, tmp_path):
     assert code == 0
     assert called["compare"] == 1
     assert called["hybrid"] == 0
+
+
+class _FlakyQwen:
+    """Reads the first line, then returns nothing for the rest."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def transcribe(self, image, preprocessing_method: str) -> Transcription:
+        self.calls += 1
+        text = "first line" if self.calls == 1 else ""
+        return Transcription(text=text, raw_text=text, model="m", status="success",
+                             preprocessing_method=preprocessing_method, latency_ms=1.0)
+
+
+def _qwen_only() -> HybridConfig:
+    return HybridConfig(routing=RoutingConfig(policy="qwen_default"))
+
+
+def test_status_is_error_when_every_detected_line_comes_back_empty(tmp_path):
+    result = run_hybrid(_prescription(tmp_path / "rx.png"), None, _Qwen(""), _Trocr(), _qwen_only())
+    assert result.line_count >= 2
+    assert result.status == "error"
+    assert result.merged_transcription == ""
+
+
+def test_status_is_partial_when_only_some_lines_are_read(tmp_path):
+    qwen = _FlakyQwen()
+    result = run_hybrid(_prescription(tmp_path / "rx.png"), None, qwen, _Trocr(), _qwen_only())
+    assert qwen.calls >= 2
+    assert result.status == "partial"
+    assert result.merged_transcription == "first line"
+    assert any("incomplete" in warning for warning in result.warnings)
+
+
+def test_status_is_success_when_all_lines_are_read(tmp_path):
+    result = run_hybrid(_prescription(tmp_path / "rx.png"), None, _Qwen("ok"), _Trocr(), _qwen_only())
+    assert result.status == "success"
+
+
+class _RecordingQwen(_Qwen):
+    def __init__(self):
+        super().__init__("ok")
+        self.images = []
+
+    def transcribe(self, image, preprocessing_method: str):
+        self.images.append(image)
+        return super().transcribe(image, preprocessing_method)
+
+
+def _red_ink_page(path: Path, tilt: float = 0.0) -> Path:
+    image = Image.new("RGB", (900, 400), (250, 250, 245))
+    draw = ImageDraw.Draw(image)
+    for top in (60, 160, 260):
+        draw.rectangle((60, top, 840, top + 28), fill=(200, 20, 20))
+    if tilt:
+        image = image.rotate(tilt, expand=True, fillcolor=(250, 250, 245), resample=Image.Resampling.BICUBIC)
+    image.save(path)
+    return path
+
+
+def test_ocr_reads_original_colour_crops_by_default(tmp_path):
+    qwen = _RecordingQwen()
+    run_hybrid(_red_ink_page(tmp_path / "p.png"), tmp_path / "out", qwen, _Trocr(), _qwen_only())
+    assert len(qwen.images) >= 3
+    for crop in qwen.images:
+        pixels = np.asarray(crop.convert("RGB")).reshape(-1, 3)
+        red = (pixels[:, 0] > 150) & (pixels[:, 1] < 90)
+        assert red.any(), "crop lost its colour; expected the red ink to be present"
+    saved = sorted((tmp_path / "out" / "lines").glob("line_*.png"))
+    assert Image.open(saved[0]).convert("RGB").getpixel((0, 0)) != (0, 0, 0)
+
+
+def test_processed_source_can_be_selected(tmp_path):
+    qwen = _RecordingQwen()
+    config = HybridConfig(routing=RoutingConfig(policy="qwen_default"), ocr_source="processed")
+    run_hybrid(_red_ink_page(tmp_path / "p.png"), None, qwen, _Trocr(), config)
+    for crop in qwen.images:
+        r, g, b = crop.convert("RGB").getpixel((crop.width // 2, crop.height // 2))
+        assert r == g == b  # grayscale stack
+
+
+def test_aligned_colour_page_matches_the_processed_page_when_deskewed(tmp_path):
+    from ocr.preprocessing import PreprocessConfig, prepare_hybrid_page, validate_image
+
+    page, info = validate_image(_red_ink_page(tmp_path / "tilt.png", tilt=5.0))
+    prepared = prepare_hybrid_page(page, info, PreprocessConfig(enable_upscale=False))
+    assert prepared.geometry.angle_degrees != 0
+    assert prepared.aligned is not None and prepared.aligned.size == prepared.processed.size
+
+
+def test_invalid_ocr_source_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError):
+        HybridConfig(ocr_source="raw")
+
+
+# ---------------------------------------------------------------- reading direction
+class _SideQwen:
+    """Answers by crop width so a test can tell the left field from the right one."""
+
+    def __init__(self, left="يسار", right="يمين", narrow_px=570):
+        self.left, self.right, self.narrow_px = left, right, narrow_px
+
+    def transcribe(self, image, preprocessing_method: str) -> Transcription:
+        text = self.left if image.width < self.narrow_px else self.right
+        return Transcription(text=text, raw_text=text, model="m", status="success",
+                             preprocessing_method=preprocessing_method, latency_ms=1.0)
+
+
+def _two_field_row(path: Path) -> Path:
+    image = Image.new("RGB", (1000, 200), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((40, 80, 200, 110), fill="black")    # narrow field on the left
+    draw.rectangle((560, 80, 930, 110), fill="black")   # wide field on the right
+    image.save(path)
+    return path
+
+
+def test_arabic_rows_are_merged_right_to_left_automatically(tmp_path):
+    result = run_hybrid(_two_field_row(tmp_path / "r.png"), None, _SideQwen(), _Trocr(), _qwen_only())
+    assert result.reading_direction == "rtl"
+    assert result.merged_transcription == "يمين يسار"
+    assert [line.reading_order for line in result.lines] == [1, 2]
+    assert result.lines[0].bbox[0] > result.lines[1].bbox[0]
+
+
+def test_latin_rows_stay_left_to_right(tmp_path):
+    qwen = _SideQwen(left="left field", right="right field")
+    result = run_hybrid(_two_field_row(tmp_path / "r.png"), None, qwen, _Trocr(), _qwen_only())
+    assert result.reading_direction == "ltr"
+    assert result.merged_transcription == "left field right field"
+
+
+def test_direction_can_be_forced(tmp_path):
+    config = HybridConfig(routing=RoutingConfig(policy="qwen_default"), reading_direction="ltr")
+    result = run_hybrid(_two_field_row(tmp_path / "r.png"), None, _SideQwen(), _Trocr(), config)
+    assert result.merged_transcription == "يسار يمين"
+
+
+def test_invalid_reading_direction_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError):
+        HybridConfig(reading_direction="sideways")
+
+
+def test_dominant_direction_ignores_digits_and_punctuation():
+    from ocr.routing import dominant_direction
+
+    assert dominant_direction(["أموكسيسيلين 500 mg"]) == "rtl"  # Arabic letters outnumber Latin
+    assert dominant_direction(["Amoxicillin 500 مجم"]) == "ltr"
+    assert dominant_direction(["123 / 456", None, ""]) == "ltr"

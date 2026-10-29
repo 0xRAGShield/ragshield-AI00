@@ -1,32 +1,29 @@
-Python environments
-
+# Python environments
 .venv/
 venv/
 env/
 
-Python cache
-
-pycache/
+# Python cache
+__pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-Secrets and environment variables
-
+# Secrets and environment variables
 .env
 .env.*
 !.env.example
-dataset/
-Generated outputs and evaluation results
 
+# Local data: never commit patient documents, datasets or OCR outputs
+data/
+dataset/
 outputs/
 runs/
 checkpoints/
 *.log
 
-Model weights and Hugging Face cache
-
+# Model weights and Hugging Face cache
 models/
 model/
 *.safetensors
@@ -38,20 +35,16 @@ model/
 .huggingface/
 .cache/
 
-Jupyter checkpoints
-
+# Jupyter checkpoints
 .ipynb_checkpoints/
 
-IDE and operating system files
-
+# IDE and operating system files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
-Temporary archives
-
+# Temporary archives
 *.zip
 *.7z
 *.rar
-
