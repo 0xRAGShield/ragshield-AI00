@@ -11,11 +11,10 @@ from typing import Any, Callable
 import numpy as np
 from PIL import Image
 
-from ocr.config import load_dotenv
+from ocr.config import default_cache_dir, load_dotenv
 from ocr.preprocessing import Variant
 
 MODEL_ID = "sherif1313/Arabic-English-handwritten-OCR-v3"
-_DEFAULT_CACHE = Path(r"D:\OCR_Models\hf_cache")
 _CHECKPOINT_DIRNAME = "sherif1313__Arabic-English-handwritten-OCR-v3"
 REQUIRED_FILES = (
     "config.json",
@@ -55,7 +54,7 @@ class LocalModelError(RuntimeError):
 @dataclass
 class HandwrittenOcrConfig:
     model: str = MODEL_ID
-    cache_dir: Path = _DEFAULT_CACHE
+    cache_dir: Path = field(default_factory=default_cache_dir)
     device: str = "cpu"
     dtype: str = "float32"
     max_new_tokens: int = 512
@@ -81,9 +80,7 @@ class HandwrittenOcrConfig:
             raise LocalModelError(
                 f"This client only loads {MODEL_ID}. Refusing {model}."
             )
-        cache_dir = Path(
-            os.environ.get("HANDWRITTEN_OCR_CACHE", str(_DEFAULT_CACHE))
-        )
+        cache_dir = default_cache_dir()
         max_new_tokens = int(os.environ.get("HANDWRITTEN_OCR_MAX_NEW_TOKENS", "512"))
         repetition_penalty = float(
             os.environ.get("HANDWRITTEN_OCR_REPETITION_PENALTY", "1.05")

@@ -28,9 +28,29 @@ MODE_HYBRID = "hybrid"
 
 # English handwritten TrOCR. This is not an Arabic OCR model.
 TROCR_MODEL_ID = "microsoft/trocr-base-handwritten"
-DEFAULT_TROCR_CHECKPOINT_DIR = Path(
-    r"D:\OCR_Models\hf_cache\microsoft__trocr-base-handwritten"
-)
+TROCR_DIRNAME = "microsoft__trocr-base-handwritten"
+
+
+def default_cache_dir() -> Path:
+    """Where local model checkpoints live.
+
+    Order: ``OCR_MODELS_DIR`` or ``HANDWRITTEN_OCR_CACHE`` from the environment,
+    otherwise ``~/.cache/ragshield-ocr/hf_cache``. Works on Windows, Linux and
+    macOS. Call it after ``load_dotenv()`` so values from ``.env`` are seen.
+    """
+    for name in ("OCR_MODELS_DIR", "HANDWRITTEN_OCR_CACHE"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return Path(value).expanduser()
+    return Path.home() / ".cache" / "ragshield-ocr" / "hf_cache"
+
+
+def default_trocr_checkpoint_dir() -> Path:
+    return default_cache_dir() / TROCR_DIRNAME
+
+
+# Kept for backwards compatibility. Prefer the functions above.
+DEFAULT_TROCR_CHECKPOINT_DIR = default_trocr_checkpoint_dir()
 
 # Preprocessing variants the local OCR path can select.
 

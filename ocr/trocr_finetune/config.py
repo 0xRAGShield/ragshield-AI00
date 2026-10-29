@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from ocr.config import DEFAULT_TROCR_CHECKPOINT_DIR, TROCR_MODEL_ID
+from ocr.config import TROCR_MODEL_ID, default_trocr_checkpoint_dir
 
 
 @dataclass
@@ -20,7 +20,7 @@ class TrocrFinetuneConfig:
     test_image_dir: str = "dataset/RxHandBD-ML/Test_Set"
     raw_csv: str = "dataset/RxHandBD-Raw/Prescription_Labels.csv"
     image_dirs: list[str] = field(default_factory=list)
-    source_checkpoint_dir: str = str(DEFAULT_TROCR_CHECKPOINT_DIR)
+    source_checkpoint_dir: str = field(default_factory=lambda: str(default_trocr_checkpoint_dir()))
     model_id: str = TROCR_MODEL_ID
     output_dir: str = "outputs/trocr_finetune/run"
     seed: int = 42

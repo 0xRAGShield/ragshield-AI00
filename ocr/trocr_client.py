@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from PIL import Image
 
-from ocr.config import DEFAULT_TROCR_CHECKPOINT_DIR, TROCR_MODEL_ID, load_dotenv
+from ocr.config import TROCR_MODEL_ID, default_trocr_checkpoint_dir, load_dotenv
 from ocr.crops import CropSpec
 
 # Files that a local microsoft/trocr-base-handwritten dump normally includes.
@@ -51,7 +51,7 @@ class TrocrLocalError(RuntimeError):
 @dataclass
 class TrocrConfig:
     model: str = TROCR_MODEL_ID
-    checkpoint_dir: Path = DEFAULT_TROCR_CHECKPOINT_DIR
+    checkpoint_dir: Path = field(default_factory=default_trocr_checkpoint_dir)
     device: str = "cpu"
     max_new_tokens: int = 64
     # Separate from line-crop decoding. A page can be longer than one IAM line.
@@ -66,8 +66,8 @@ class TrocrConfig:
         load_dotenv()
         raw = os.environ.get("TROCR_CHECKPOINT_DIR")
         if raw is not None and not raw.strip():
-            return cls(configured=False, checkpoint_dir=DEFAULT_TROCR_CHECKPOINT_DIR)
-        checkpoint_dir = Path(raw.strip()) if raw and raw.strip() else DEFAULT_TROCR_CHECKPOINT_DIR
+            return cls(configured=False, checkpoint_dir=default_trocr_checkpoint_dir())
+        checkpoint_dir = Path(raw.strip()) if raw and raw.strip() else default_trocr_checkpoint_dir()
         device = os.environ.get("TROCR_DEVICE", os.environ.get("HANDWRITTEN_OCR_DEVICE", "cpu")).strip() or "cpu"
         max_new_tokens = int(os.environ.get("TROCR_MAX_NEW_TOKENS", "64"))
         full_page_max_new_tokens = int(
