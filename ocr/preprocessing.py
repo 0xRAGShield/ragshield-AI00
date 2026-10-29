@@ -25,6 +25,8 @@ class PreprocessConfig:
     max_scale: float = 2.0
     min_short_side_px: int = 1200
     assumed_dpi_when_missing: float = 96.0
+    # Never upscale past this longest side. The OCR client downsizes large images anyway.
+    max_output_side: int = 3000
     enable_denoise: bool = True
     denoise_method: str = "median"
     median_ksize: int = 3
@@ -309,6 +311,15 @@ def upscale_if_needed(
     height, width = image.shape[:2]
     short_side = min(height, width)
 
+    # A large image gains nothing from resampling, whatever its DPI tag says. Phone
+    # photos often carry a 72 DPI tag; trusting it would blow them up to 2x and the
+    # OCR client would then shrink them again.
+    if short_side >= config.min_short_side_px:
+        return image, 1.0, [
+            f"short side {short_side}px already >= {config.min_short_side_px}px; "
+            "upscaling skipped"
+        ]
+
     if dpi is not None:
         source_dpi = min(dpi)
 
@@ -335,6 +346,7 @@ def upscale_if_needed(
         )
 
     scale = float(min(config.max_scale, max(desired, 1.0)))
+    scale = min(scale, config.max_output_side / max(height, width))
 
     if scale <= 1.01:
         return image, 1.0, notes + ["scale capped at 1"]

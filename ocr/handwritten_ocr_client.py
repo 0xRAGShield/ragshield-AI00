@@ -13,6 +13,7 @@ from PIL import Image
 
 from ocr.config import default_cache_dir, inference_context, load_dotenv, resolve_device, resolve_dtype
 from ocr.preprocessing import Variant
+from ocr.tiling import needs_tiling, plan_bands
 
 MODEL_ID = "sherif1313/Arabic-English-handwritten-OCR-v3"
 _CHECKPOINT_DIRNAME = "sherif1313__Arabic-English-handwritten-OCR-v3"
@@ -41,6 +42,33 @@ TRANSCRIPTION_PROMPT = (
     "blank lines. Reply with the transcription only."
 )
 
+# General documents: notes, forms, letters, exam papers. Less cautious than the
+# prescription prompt: it asks for a best reading of every word instead of
+# giving up on a whole line.
+GENERAL_PROMPT = (
+    "You are an OCR transcriber. Copy all text that is visibly written or printed "
+    "in the image, in natural reading order. Arabic is written right to left; keep "
+    "Arabic and English, mixed-language lines, numbers, dates, names, and punctuation "
+    "in their original script. Do not translate. Do not summarize, explain, or add "
+    "words that are not on the page. Give your best reading of every word; write "
+    "[illegible] only for a single word that cannot be read at all, and keep "
+    "transcribing the rest of the line. Do not repeat lines or fragments unless they "
+    "are written more than once. Do not add headings, labels, markdown, commentary, "
+    "or extra blank lines. Reply with the transcription only."
+)
+
+PROMPTS = {"general": GENERAL_PROMPT, "prescription": TRANSCRIPTION_PROMPT}
+
+
+def prompt_for(mode: str, custom: str | None = None) -> str:
+    if custom and custom.strip():
+        return custom.strip()
+    try:
+        return PROMPTS[mode]
+    except KeyError:
+        raise ValueError(f"prompt mode must be one of {sorted(PROMPTS)}, got {mode!r}") from None
+
+
 # Heuristic flags only. They do not rewrite text or change operational status.
 _LONG_CHAR_LIMIT = 3500
 _REPEAT_NGRAM = 6
@@ -65,7 +93,13 @@ class HandwrittenOcrConfig:
     repetition_penalty: float = 1.05
     # Longest side of the tensor sent to the vision encoder. Source files and
     # saved variant PNGs are unchanged. Qwen2.5-VL cost scales with pixels.
-    max_image_side: int = 1280
+    max_image_side: int = 1792
+    # Pages taller than max_image_side at that scale are sent as several bands cut at
+    # blank rows, so handwriting is not shrunk to fit one image.
+    tile_pages: bool = True
+    # "general" (any document) or "prescription" (conservative, medical wording).
+    prompt_mode: str = "general"
+    prompt_text: str | None = None
     # Local file URI only. Present so reports keep a base_url field without a host.
     base_url: str = ""
 
@@ -88,8 +122,11 @@ class HandwrittenOcrConfig:
             os.environ.get("HANDWRITTEN_OCR_REPETITION_PENALTY", "1.05")
         )
         max_image_side = int(
-            os.environ.get("HANDWRITTEN_OCR_MAX_IMAGE_SIDE", "1280")
+            os.environ.get("HANDWRITTEN_OCR_MAX_IMAGE_SIDE", "1792")
         )
+        tile_pages = os.environ.get("HANDWRITTEN_OCR_TILE_PAGES", "1").strip().lower() not in {"0", "false", "no", "off"}
+        prompt_mode = os.environ.get("HANDWRITTEN_OCR_PROMPT_MODE", "general").strip().lower() or "general"
+        prompt_for(prompt_mode)  # fail early on a typo
         checkpoint = cache_dir / _CHECKPOINT_DIRNAME
         return cls(
             model=model,
@@ -99,6 +136,8 @@ class HandwrittenOcrConfig:
             max_new_tokens=max_new_tokens,
             repetition_penalty=repetition_penalty,
             max_image_side=max_image_side,
+            tile_pages=tile_pages,
+            prompt_mode=prompt_mode,
             base_url=checkpoint.as_uri(),
         )
 
@@ -156,9 +195,10 @@ class HandwrittenOcrClient:
         preprocessing_method: str,
     ) -> Transcription:
         started = time.perf_counter()
+        notes: list[str] = []
         try:
             self.ensure_ready()
-            text = self._generate(_as_pil(image))
+            text = self._generate_page(_as_pil(image), notes)
         except Exception as exc:
             return Transcription(
                 text=None,
@@ -169,7 +209,7 @@ class HandwrittenOcrClient:
                 error=_public_error(exc),
             )
         raw = text
-        warnings = diagnose_transcription(raw)
+        warnings = notes + diagnose_transcription(raw)
         return Transcription(
             text=raw,
             raw_text=raw,
@@ -226,6 +266,20 @@ class HandwrittenOcrClient:
         if hasattr(gen, "top_k"):
             gen.top_k = None
 
+    def _generate_page(self, image: Image.Image, notes: list[str]) -> str:
+        """Run one image, or several bands when the page is too large for one call."""
+        width, height = image.size
+        if self.config.tile_pages and needs_tiling(width, height, self.config.max_image_side):
+            bands = plan_bands(np.asarray(image.convert("L")), self.config.max_image_side)
+            if len(bands) > 1:
+                notes.append(f"large page split into {len(bands)} bands at blank rows")
+                parts = [
+                    self._generate(image.crop((0, top, width, bottom)))
+                    for top, bottom in bands
+                ]
+                return "\n".join(part for part in parts if part)
+        return self._generate(image)
+
     def _generate(self, image: Image.Image) -> str:
         model = self._model
         processor = self._processor
@@ -235,7 +289,7 @@ class HandwrittenOcrClient:
                 "role": "user",
                 "content": [
                     {"type": "image", "image": prepared},
-                    {"type": "text", "text": TRANSCRIPTION_PROMPT},
+                    {"type": "text", "text": prompt_for(self.config.prompt_mode, self.config.prompt_text)},
                 ],
             }
         ]
