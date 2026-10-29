@@ -41,6 +41,9 @@ class DetectedLine:
     image: Image.Image
     crop_path: str | None = None
     warnings: list[str] = field(default_factory=list)
+    # What the recognizer should read when it differs from ``image`` (for example the
+    # original-colour crop). ``image`` stays the crop the routing heuristics were built for.
+    ocr_image: Image.Image | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -181,7 +184,7 @@ def save_line_crops(
     for line in lines:
         name = f"{line.line_id}.png"
         path = folder / name
-        line.image.save(path, format="PNG")
+        (line.ocr_image or line.image).save(path, format="PNG")
         line.crop_path = f"lines/{name}"
     return lines
 

@@ -123,6 +123,10 @@ class PreparedPage:
     processed: Image.Image
     variant: Variant
     geometry: PageGeometry
+    # Original colours, scaled and deskewed exactly like ``processed`` (same size,
+    # same coordinates) but without contrast/denoise/sharpen. Line boxes found on
+    # ``processed`` can be cut from this image for recognition.
+    aligned: Image.Image | None = None
 
 
 @dataclass
@@ -781,6 +785,17 @@ def apply_combined_preprocess(
     return variant, geometry
 
 
+def align_color(original: np.ndarray, geometry: PageGeometry) -> np.ndarray:
+    """Apply only the geometric steps (scale, deskew) of the combined pipeline to colour."""
+    image = original
+    if geometry.scale > 1.0:
+        resized = Image.fromarray(image).resize(
+            (geometry.scaled_width, geometry.scaled_height), resample=LANCZOS
+        )
+        image = np.asarray(resized)
+    return rotate_expand(image, geometry.angle_degrees)
+
+
 def prepare_hybrid_page(
     image: Image.Image,
     info: ImageInfo,
@@ -798,11 +813,15 @@ def prepare_hybrid_page(
     processed = Image.fromarray(variant.image)
     if processed.mode != "RGB":
         processed = processed.convert("RGB")
+    aligned = Image.fromarray(align_color(array, geometry)).convert("RGB")
+    if aligned.size != processed.size:  # cannot happen today; never mis-map boxes if it does
+        aligned = None
     return PreparedPage(
         oriented=oriented,
         processed=processed,
         variant=variant,
         geometry=geometry,
+        aligned=aligned,
     )
 
 

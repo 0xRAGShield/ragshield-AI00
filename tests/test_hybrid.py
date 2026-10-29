@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+
+import numpy as np
 from types import SimpleNamespace
 
 from PIL import Image, ImageDraw
@@ -381,3 +383,61 @@ def test_status_is_partial_when_only_some_lines_are_read(tmp_path):
 def test_status_is_success_when_all_lines_are_read(tmp_path):
     result = run_hybrid(_prescription(tmp_path / "rx.png"), None, _Qwen("ok"), _Trocr(), _qwen_only())
     assert result.status == "success"
+
+
+class _RecordingQwen(_Qwen):
+    def __init__(self):
+        super().__init__("ok")
+        self.images = []
+
+    def transcribe(self, image, preprocessing_method: str):
+        self.images.append(image)
+        return super().transcribe(image, preprocessing_method)
+
+
+def _red_ink_page(path: Path, tilt: float = 0.0) -> Path:
+    image = Image.new("RGB", (900, 400), (250, 250, 245))
+    draw = ImageDraw.Draw(image)
+    for top in (60, 160, 260):
+        draw.rectangle((60, top, 840, top + 28), fill=(200, 20, 20))
+    if tilt:
+        image = image.rotate(tilt, expand=True, fillcolor=(250, 250, 245), resample=Image.Resampling.BICUBIC)
+    image.save(path)
+    return path
+
+
+def test_ocr_reads_original_colour_crops_by_default(tmp_path):
+    qwen = _RecordingQwen()
+    run_hybrid(_red_ink_page(tmp_path / "p.png"), tmp_path / "out", qwen, _Trocr(), _qwen_only())
+    assert len(qwen.images) >= 3
+    for crop in qwen.images:
+        pixels = np.asarray(crop.convert("RGB")).reshape(-1, 3)
+        red = (pixels[:, 0] > 150) & (pixels[:, 1] < 90)
+        assert red.any(), "crop lost its colour; expected the red ink to be present"
+    saved = sorted((tmp_path / "out" / "lines").glob("line_*.png"))
+    assert Image.open(saved[0]).convert("RGB").getpixel((0, 0)) != (0, 0, 0)
+
+
+def test_processed_source_can_be_selected(tmp_path):
+    qwen = _RecordingQwen()
+    config = HybridConfig(routing=RoutingConfig(policy="qwen_default"), ocr_source="processed")
+    run_hybrid(_red_ink_page(tmp_path / "p.png"), None, qwen, _Trocr(), config)
+    for crop in qwen.images:
+        r, g, b = crop.convert("RGB").getpixel((crop.width // 2, crop.height // 2))
+        assert r == g == b  # grayscale stack
+
+
+def test_aligned_colour_page_matches_the_processed_page_when_deskewed(tmp_path):
+    from ocr.preprocessing import PreprocessConfig, prepare_hybrid_page, validate_image
+
+    page, info = validate_image(_red_ink_page(tmp_path / "tilt.png", tilt=5.0))
+    prepared = prepare_hybrid_page(page, info, PreprocessConfig(enable_upscale=False))
+    assert prepared.geometry.angle_degrees != 0
+    assert prepared.aligned is not None and prepared.aligned.size == prepared.processed.size
+
+
+def test_invalid_ocr_source_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError):
+        HybridConfig(ocr_source="raw")

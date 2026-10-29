@@ -16,6 +16,7 @@ from ocr.line_detection import (
 )
 from ocr.preprocessing import (
     ImageValidationError,
+    crop_region,
     PreprocessConfig,
     PreparedPage,
     prepare_hybrid_page,
@@ -52,6 +53,13 @@ class HybridConfig:
     routing: RoutingConfig = field(default_factory=RoutingConfig)
     dual_compare: bool = False
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
+    # "aligned": recognize original-colour crops (scaled and deskewed like the page).
+    # "processed": recognize crops of the grayscale CLAHE/denoise/sharpen image.
+    ocr_source: str = "aligned"
+
+    def __post_init__(self) -> None:
+        if self.ocr_source not in {"aligned", "processed"}:
+            raise ValueError("ocr_source must be 'aligned' or 'processed'")
 
 
 @dataclass
@@ -157,12 +165,21 @@ def run_hybrid(
         return result
 
     detection = detect_lines(prepared.processed, config.detect)
+    if config.ocr_source == "aligned" and prepared.aligned is not None:
+        for line in detection.lines:
+            line.ocr_image = crop_region(prepared.aligned, line.bbox)
     warnings.extend(info.warnings)
     warnings.extend(detection.warnings)
-    warnings.append(
-        "hybrid line detection and OCR crops use combined_gray "
-        "(grayscale stack without Otsu/adaptive binarization)"
-    )
+    if config.ocr_source == "aligned" and prepared.aligned is not None:
+        warnings.append(
+            "hybrid line detection uses combined_gray; OCR crops are cut from the "
+            "original-colour page aligned to it (same scale and deskew)"
+        )
+    else:
+        warnings.append(
+            "hybrid line detection and OCR crops use combined_gray "
+            "(grayscale stack without Otsu/adaptive binarization)"
+        )
     if destination is not None:
         save_line_crops(detection.lines, destination / "lines")
 
@@ -321,7 +338,7 @@ def _recognize_line(
 
 
 def _run_qwen(client: HandwrittenOcrClient, line: DetectedLine) -> Transcription:
-    return client.transcribe(line.image, preprocessing_method="hybrid_line")
+    return client.transcribe(line.ocr_image or line.image, preprocessing_method="hybrid_line")
 
 
 def _run_trocr(
@@ -330,7 +347,7 @@ def _run_trocr(
     source: str,
 ) -> TrocrCropResult:
     return client.transcribe_line(
-        line.image,
+        line.ocr_image or line.image,
         crop_id=line.line_id,
         source=source,
         box=line.bbox,
@@ -345,6 +362,7 @@ def _config_dict(config: HybridConfig, prepared: PreparedPage | None = None) -> 
         "pad_px": config.detect.pad_px,
         "preprocess": asdict(config.preprocess),
         "preprocess_variant": "combined_gray",
+        "ocr_source": config.ocr_source,
     }
     if prepared is not None:
         payload["preprocess_steps"] = list(prepared.variant.steps)
