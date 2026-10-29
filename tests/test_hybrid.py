@@ -441,3 +441,61 @@ def test_invalid_ocr_source_is_rejected():
 
     with pytest.raises(ValueError):
         HybridConfig(ocr_source="raw")
+
+
+# ---------------------------------------------------------------- reading direction
+class _SideQwen:
+    """Answers by crop width so a test can tell the left field from the right one."""
+
+    def __init__(self, left="يسار", right="يمين", narrow_px=570):
+        self.left, self.right, self.narrow_px = left, right, narrow_px
+
+    def transcribe(self, image, preprocessing_method: str) -> Transcription:
+        text = self.left if image.width < self.narrow_px else self.right
+        return Transcription(text=text, raw_text=text, model="m", status="success",
+                             preprocessing_method=preprocessing_method, latency_ms=1.0)
+
+
+def _two_field_row(path: Path) -> Path:
+    image = Image.new("RGB", (1000, 200), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((40, 80, 200, 110), fill="black")    # narrow field on the left
+    draw.rectangle((560, 80, 930, 110), fill="black")   # wide field on the right
+    image.save(path)
+    return path
+
+
+def test_arabic_rows_are_merged_right_to_left_automatically(tmp_path):
+    result = run_hybrid(_two_field_row(tmp_path / "r.png"), None, _SideQwen(), _Trocr(), _qwen_only())
+    assert result.reading_direction == "rtl"
+    assert result.merged_transcription == "يمين يسار"
+    assert [line.reading_order for line in result.lines] == [1, 2]
+    assert result.lines[0].bbox[0] > result.lines[1].bbox[0]
+
+
+def test_latin_rows_stay_left_to_right(tmp_path):
+    qwen = _SideQwen(left="left field", right="right field")
+    result = run_hybrid(_two_field_row(tmp_path / "r.png"), None, qwen, _Trocr(), _qwen_only())
+    assert result.reading_direction == "ltr"
+    assert result.merged_transcription == "left field right field"
+
+
+def test_direction_can_be_forced(tmp_path):
+    config = HybridConfig(routing=RoutingConfig(policy="qwen_default"), reading_direction="ltr")
+    result = run_hybrid(_two_field_row(tmp_path / "r.png"), None, _SideQwen(), _Trocr(), config)
+    assert result.merged_transcription == "يسار يمين"
+
+
+def test_invalid_reading_direction_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError):
+        HybridConfig(reading_direction="sideways")
+
+
+def test_dominant_direction_ignores_digits_and_punctuation():
+    from ocr.routing import dominant_direction
+
+    assert dominant_direction(["أموكسيسيلين 500 mg"]) == "rtl"  # Arabic letters outnumber Latin
+    assert dominant_direction(["Amoxicillin 500 مجم"]) == "ltr"
+    assert dominant_direction(["123 / 456", None, ""]) == "ltr"

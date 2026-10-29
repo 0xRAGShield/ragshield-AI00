@@ -30,6 +30,7 @@ from ocr.routing import (
     RoutingConfig,
     RoutingDecision,
     classify_recognized_script,
+    dominant_direction,
     needs_safety_review,
     route_line,
     should_fallback_to_qwen,
@@ -56,10 +57,15 @@ class HybridConfig:
     # "aligned": recognize original-colour crops (scaled and deskewed like the page).
     # "processed": recognize crops of the grayscale CLAHE/denoise/sharpen image.
     ocr_source: str = "aligned"
+    # Order of boxes that share a row: "auto" follows the recognized script (right to
+    # left when most letters are Arabic), or force "ltr" / "rtl".
+    reading_direction: str = "auto"
 
     def __post_init__(self) -> None:
         if self.ocr_source not in {"aligned", "processed"}:
             raise ValueError("ocr_source must be 'aligned' or 'processed'")
+        if self.reading_direction not in {"auto", "ltr", "rtl"}:
+            raise ValueError("reading_direction must be 'auto', 'ltr' or 'rtl'")
 
 
 @dataclass
@@ -79,6 +85,7 @@ class LineOcrResult:
     fallback_text: str | None = None
     fallback_reason: str | None = None
     script_after_ocr: str | None = None
+    row_id: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -107,10 +114,12 @@ class HybridResult:
     processed_height: int = 0
     preprocess_variant: str | None = None
     preprocess_steps: list[str] = field(default_factory=list)
+    reading_direction: str = "ltr"
 
     def to_dict(self) -> dict:
         return {
             "source": self.source,
+            "reading_direction": self.reading_direction,
             "width": self.width,
             "height": self.height,
             "processed_width": self.processed_width,
@@ -208,11 +217,13 @@ def run_hybrid(
         counts[item.selected_engine] = counts.get(item.selected_engine, 0) + 1
         line_results.append(item)
 
-    merged = "\n".join(
-        item.raw_text
-        for item in sorted(line_results, key=lambda row: row.reading_order)
-        if item.raw_text
+    direction = (
+        dominant_direction(item.raw_text for item in line_results)
+        if config.reading_direction == "auto"
+        else config.reading_direction
     )
+    line_results = order_lines(line_results, direction)
+    merged = merge_text(line_results)
     usable = [item for item in line_results if item.status == "success" and item.raw_text]
     if not detection.lines:
         status = "no_lines"
@@ -250,10 +261,40 @@ def run_hybrid(
         processed_height=prepared.geometry.processed_height,
         preprocess_variant=prepared.variant.name,
         preprocess_steps=list(prepared.variant.steps),
+        reading_direction=direction,
     )
     if destination is not None:
         _write_hybrid_outputs(result, destination, prepared=prepared)
     return result
+
+
+def order_lines(lines: list[LineOcrResult], direction: str) -> list[LineOcrResult]:
+    """Rows top to bottom; inside a row left to right, or right to left for Arabic.
+
+    Renumbers ``reading_order`` so the JSON, the text file and the report agree.
+    """
+    ordered = sorted(
+        lines,
+        key=lambda item: (item.row_id, -item.bbox[0] if direction == "rtl" else item.bbox[0]),
+    )
+    for index, item in enumerate(ordered, start=1):
+        item.reading_order = index
+    return ordered
+
+
+def merge_text(lines: list[LineOcrResult]) -> str:
+    """One text line per visual row. Boxes on the same row are joined with a space."""
+    rows: list[list[str]] = []
+    last_row = None
+    for item in lines:
+        if not item.raw_text:
+            continue
+        if item.row_id == last_row and rows:
+            rows[-1].append(item.raw_text)
+        else:
+            rows.append([item.raw_text])
+            last_row = item.row_id
+    return "\n".join(" ".join(parts) for parts in rows)
 
 
 def _recognize_line(
@@ -331,6 +372,7 @@ def _recognize_line(
             fallback_text=fallback_text,
             fallback_reason=fallback_reason,
             script_after_ocr=script,
+            row_id=line.row_id,
         ),
         used_fallback,
         elapsed,
@@ -363,6 +405,7 @@ def _config_dict(config: HybridConfig, prepared: PreparedPage | None = None) -> 
         "preprocess": asdict(config.preprocess),
         "preprocess_variant": "combined_gray",
         "ocr_source": config.ocr_source,
+        "reading_direction": config.reading_direction,
     }
     if prepared is not None:
         payload["preprocess_steps"] = list(prepared.variant.steps)
