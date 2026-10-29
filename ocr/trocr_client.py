@@ -8,10 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 from PIL import Image
 
 from ocr.config import TROCR_MODEL_ID, default_trocr_checkpoint_dir, inference_context, load_dotenv, resolve_device
 from ocr.crops import CropSpec
+from ocr.tiling import plan_segments
 
 # Files that a local microsoft/trocr-base-handwritten dump normally includes.
 _CONFIG_FILES = ("config.json", "preprocessor_config.json")
@@ -42,6 +44,7 @@ STATUS_CROP_ENTRY_INVALID = "crop_entry_invalid"
 STATUS_SKIPPED_ARABIC = "skipped_arabic"
 STATUS_INFERENCE_FAILURE = "inference_failure"
 STATUS_SUCCESS = "success"
+LINE_PREP_MODES = ("pad_square", "stretch", "chunk")
 
 
 class TrocrLocalError(RuntimeError):
@@ -57,9 +60,22 @@ class TrocrConfig:
     # Separate from line-crop decoding. A page can be longer than one IAM line.
     full_page_max_new_tokens: int = 256
     configured: bool = True
+    # How a line crop is prepared for the 384x384 ViT input:
+    #   pad_square: pad to a square (keeps proportions, shrinks wide lines a lot). Default.
+    #   stretch:    hand the crop over as is; the processor resizes it. This is how
+    #               the base model saw IAM lines when it was trained.
+    #   chunk:      cut lines wider than ``chunk_aspect`` into pieces at word gaps,
+    #               read each piece stretched, and join the results.
+    # None of these has been validated on this project's data. Compare them with a labelled set.
+    line_prep: str = "pad_square"
+    chunk_aspect: float = 5.0
 
     def __post_init__(self) -> None:
         self.checkpoint_dir = Path(self.checkpoint_dir)
+        if self.line_prep not in LINE_PREP_MODES:
+            raise ValueError(f"line_prep must be one of {LINE_PREP_MODES}, got {self.line_prep!r}")
+        if self.chunk_aspect <= 1:
+            raise ValueError("chunk_aspect must be greater than 1")
 
     @classmethod
     def from_env(cls) -> "TrocrConfig":
@@ -73,6 +89,7 @@ class TrocrConfig:
         full_page_max_new_tokens = int(
             os.environ.get("TROCR_FULL_PAGE_MAX_NEW_TOKENS", "256")
         )
+        line_prep = os.environ.get("TROCR_LINE_PREP", "pad_square").strip().lower() or "pad_square"
         model = os.environ.get("TROCR_MODEL_ID", TROCR_MODEL_ID).strip() or TROCR_MODEL_ID
         return cls(
             model=model,
@@ -81,6 +98,7 @@ class TrocrConfig:
             max_new_tokens=max_new_tokens,
             full_page_max_new_tokens=full_page_max_new_tokens,
             configured=True,
+            line_prep=line_prep,
         )
 
 
@@ -284,15 +302,37 @@ class TrocrClient:
                 language="en",
                 source=source,
             )
-        padded = pad_line_keep_aspect(image)
-        spec = CropSpec(
+        pieces = self._prepare_line(image)
+        results = [
+            self._transcribe_one(
+                CropSpec(crop_id=crop_id, image=piece, source=source, box=box, language="en")
+            )
+            for piece in pieces
+        ]
+        if len(results) == 1:
+            return results[0]
+        failed = next((item for item in results if item.status != STATUS_SUCCESS), None)
+        if failed is not None:
+            return failed
+        return TrocrCropResult(
             crop_id=crop_id,
-            image=padded,
-            source=source,
-            box=box,
+            status=STATUS_SUCCESS,
+            text=" ".join(item.text for item in results if item.text),
+            latency_ms=sum(item.latency_ms for item in results),
+            box=list(box) if box else None,
             language="en",
+            source=source,
         )
-        return self._transcribe_one(spec)
+
+    def _prepare_line(self, image: Image.Image) -> list[Image.Image]:
+        mode = self.config.line_prep
+        if mode == "stretch":
+            return [_as_rgb(image)]
+        if mode == "chunk":
+            rgb = _as_rgb(image)
+            segments = plan_segments(np.asarray(rgb.convert("L")), self.config.chunk_aspect)
+            return [rgb.crop((left, 0, right, rgb.height)) for left, right in segments]
+        return [pad_line_keep_aspect(image)]
 
     def transcribe_full_page(
         self,

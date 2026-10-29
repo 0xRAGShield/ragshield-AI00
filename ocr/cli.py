@@ -67,6 +67,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Also run Qwen on TrOCR-routed lines without replacing TrOCR text.",
     )
     transcribe.add_argument(
+        "--trocr-line-prep",
+        choices=("pad_square", "stretch", "chunk"),
+        default=None,
+        help="How TrOCR line crops are prepared. Default: TROCR_LINE_PREP or pad_square (unvalidated options)",
+    )
+    transcribe.add_argument(
         "--trocr-checkpoint",
         type=Path,
         default=None,
@@ -382,6 +388,8 @@ def _trocr_client_from_args(args: argparse.Namespace) -> TrocrClient:
     if checkpoint is not None:
         config.checkpoint_dir = Path(checkpoint)
         config.configured = True
+    if getattr(args, "trocr_line_prep", None):
+        config.line_prep = args.trocr_line_prep
     return TrocrClient(config)
 
 
