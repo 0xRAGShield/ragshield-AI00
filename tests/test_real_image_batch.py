@@ -2,6 +2,7 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from ocr.batch import discover_images, run_real_images
@@ -10,8 +11,8 @@ from ocr.preprocessing import PreprocessConfig
 
 
 class _ScriptedClient:
-    def __init__(self, outcomes: list[Transcription]) -> None:
-        self.config = HandwrittenOcrConfig(cache_dir=Path(r"D:\OCR_Models\hf_cache"))
+    def __init__(self, outcomes: list[Transcription], cache_dir: Path) -> None:
+        self.config = HandwrittenOcrConfig(cache_dir=cache_dir)
         self._outcomes = list(outcomes)
         self.calls: list[str] = []
 
@@ -31,13 +32,25 @@ def _page(path: Path) -> None:
     image.save(path)
 
 
-def test_discovers_existing_data_images() -> None:
-    found = discover_images(Path("data/images"))
-    names = [path.name for path in found]
-    assert len(found) == 9
+def test_discovers_images_sorted_and_ignores_other_files(tmp_path: Path) -> None:
+    root = tmp_path / "images"
+    (root / "nested").mkdir(parents=True)
+    for name in ("b.png", "a.jpg", "nested/c.PNG"):
+        Image.new("RGB", (20, 20), "white").save(root / name)
+    (root / "notes.txt").write_text("ignore", encoding="utf-8")
+    found = [path.relative_to(root).as_posix() for path in discover_images(root)]
+    assert found == ["a.jpg", "b.png", "nested/c.PNG"]
+
+
+def test_discover_images_raises_for_missing_folder(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        discover_images(tmp_path / "does-not-exist")
+
+
+@pytest.mark.skipif(not Path("data/images").is_dir(), reason="local data/images folder not present")
+def test_discovers_local_data_images_in_sorted_order() -> None:
+    names = [path.name for path in discover_images(Path("data/images"))]
     assert names == sorted(names)
-    assert "azza_mohamed_prescription2.png" in names
-    assert "medical-image.jpg" in names
 
 
 def test_missing_checkpoint_records_not_run_without_fake_text(tmp_path: Path) -> None:
@@ -112,7 +125,8 @@ def test_batch_saves_exact_text_and_continues_after_a_failure(tmp_path: Path) ->
                 latency_ms=4.0,
                 error="decoder stopped",
             ),
-        ]
+        ],
+        cache_dir=tmp_path / "cache",
     )
     report = run_real_images(
         image_root,

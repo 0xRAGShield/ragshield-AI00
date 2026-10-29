@@ -43,6 +43,16 @@ def test_missing_checkpoint_does_not_invent_text(tmp_path: Path, monkeypatch) ->
     assert "external service" in (result.error or "")
 
 
+class _FakeTensor:
+    """Minimal stand-in so these tests do not need torch."""
+
+    def __init__(self, shape):
+        self.shape = shape
+
+    def to(self, *_args, **_kwargs):
+        return self
+
+
 def test_loader_is_offline_and_local(tmp_path: Path) -> None:
     directory = tmp_path / "cache" / "sherif1313__Arabic-English-handwritten-OCR-v3"
     _touch_checkpoint(directory)
@@ -67,9 +77,7 @@ def test_loader_is_offline_and_local(tmp_path: Path) -> None:
                 return "prompt"
 
             def __call__(self, *args, **kwargs):
-                import torch
-
-                return {"input_ids": torch.zeros((1, 2), dtype=torch.long)}
+                return {"input_ids": _FakeTensor((1, 2))}
 
             def batch_decode(self, *args, **kwargs):
                 return ["unused"]

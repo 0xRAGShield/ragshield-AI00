@@ -217,8 +217,6 @@ class HandwrittenOcrClient:
             gen.top_k = None
 
     def _generate(self, image: Image.Image) -> str:
-        import torch
-
         model = self._model
         processor = self._processor
         prepared = _limit_image_side(image, self.config.max_image_side)
@@ -246,7 +244,7 @@ class HandwrittenOcrClient:
             key: value.to("cpu") if hasattr(value, "to") else value
             for key, value in inputs.items()
         }
-        with torch.inference_mode():
+        with _inference_context():
             generated = model.generate(
                 **inputs,
                 max_new_tokens=self.config.max_new_tokens,
@@ -299,6 +297,20 @@ def diagnose_transcription(text: str | None) -> list[str]:
             )
 
     return warnings
+
+
+def _inference_context():
+    """torch.inference_mode() when torch is installed, otherwise a no-op.
+
+    Keeps the client importable and testable without torch.
+    """
+    try:
+        import torch
+    except ImportError:  # pragma: no cover - exercised only without torch
+        from contextlib import nullcontext
+
+        return nullcontext()
+    return torch.inference_mode()
 
 
 def _limit_image_side(image: Image.Image, max_side: int) -> Image.Image:
