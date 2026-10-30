@@ -224,9 +224,10 @@ class Reranker:
 
             try:
                 reranked_candidates = await self._score_candidates(
-                    query=expand_query_with_document_aliases(
-                        retrieval_result.query.text
-                    ),
+                    # query=expand_query_with_document_aliases(
+                    #     retrieval_result.query.text
+                    # ),
+                    query=retrieval_result.query.text,
                     candidates=candidates,
                     metrics=metrics,
                 )

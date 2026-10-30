@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -176,6 +177,132 @@ def test_normalize_annotations_requires_explicit_label():
     ]
     out = _normalize_annotations(raw)
     assert out == [{"text": "ok", "label": "supported"}]
+
+
+def _protocol_ndcg(ranked: list[str], grades: dict[str, float], k: int) -> float:
+    """Independent Burges nDCG used as the expected value, not the implementation."""
+
+    def dcg(order: list[str]) -> float:
+        total = 0.0
+        for rank, item in enumerate(order[:k], start=1):
+            total += (2.0 ** grades.get(item, 0.0) - 1.0) / math.log2(rank + 1)
+        return total
+
+    ideal = sorted(grades, key=lambda doc: grades[doc], reverse=True)
+    ideal_dcg = dcg(ideal)
+    assert ideal_dcg > 0
+    return dcg(ranked) / ideal_dcg
+
+
+def test_empty_ranking_is_zero_when_gold_exists():
+    gold = ["g1"]
+    assert hit_at_k([], gold, 5) == 0.0
+    assert recall_at_k([], gold, 5) == 0.0
+    assert precision_at_k([], gold, 5) == 0.0
+    assert mrr_at_k([], gold, 5) == 0.0
+    assert ndcg_at_k([], gold_ids=gold, k=5) == 0.0
+
+
+def test_fewer_than_k_and_no_relevant_documents():
+    assert precision_at_k(["g1"], ["g1"], 5) == 0.2
+    assert recall_at_k(["g1"], ["g1", "g2"], 1) == 0.5
+    assert hit_at_k(["a", "b"], ["missing"], 3) == 0.0
+    assert mrr_at_k(["a", "b"], ["missing"], 3) == 0.0
+    assert ndcg_at_k(["a", "b"], gold_ids=["missing"], k=3) == 0.0
+
+
+def test_duplicate_ids_keep_set_precision_and_repeated_ndcg_gain():
+    ranked = ["g1", "g1", "x"]
+    gold = ["g1"]
+    assert precision_at_k(ranked, gold, 2) == 0.5
+    assert recall_at_k(ranked, gold, 2) == 1.0
+    assert hit_at_k(ranked, gold, 2) == 1.0
+    assert mrr_at_k(ranked, gold, 2) == 1.0
+    score = ndcg_at_k(ranked, gold_ids=gold, k=2)
+    first_only = _protocol_ndcg(["g1", "__unjudged__"], {"g1": 1.0}, 2)
+    assert math.isclose(score, first_only)
+    assert 0.0 <= score <= 1.0
+    assert score == 1.0
+
+    later_kept = ndcg_at_k(["g1", "g1", "g2"], gold_ids=["g1", "g2"], k=3)
+    expected_later = _protocol_ndcg(
+        ["g1", "__unjudged__", "g2"], {"g1": 1.0, "g2": 1.0}, 3
+    )
+    compacted = _protocol_ndcg(["g1", "g2"], {"g1": 1.0, "g2": 1.0}, 3)
+    assert math.isclose(later_kept, expected_later)
+    assert later_kept < compacted
+    assert 0.0 <= later_kept <= 1.0
+
+
+def test_graded_ndcg_known_values_and_missing_judgments():
+    judgments = [
+        {"chunk_id": "a", "grade": 1},
+        {"chunk_id": "b", "grade": 3},
+        {"chunk_id": "c", "grade": 0},
+    ]
+    grades = {"a": 1.0, "b": 3.0, "c": 0.0}
+    ranked = ["a", "b", "c"]
+    score = ndcg_at_k(ranked, k=3, relevance_judgments=judgments)
+    assert math.isclose(score, _protocol_ndcg(ranked, grades, 3))
+    assert math.isclose(score, 0.7098097413968655)
+
+    fractional = [{"chunk_id": "a", "grade": 0.5}, {"chunk_id": "b", "grade": 1}]
+    fractional_score = ndcg_at_k(
+        ["a", "b"], k=2, relevance_judgments=fractional
+    )
+    assert math.isclose(
+        fractional_score, _protocol_ndcg(["a", "b"], {"a": 0.5, "b": 1.0}, 2)
+    )
+
+    unjudged_first = ndcg_at_k(
+        ["unjudged", "a"],
+        k=2,
+        relevance_judgments=[{"chunk_id": "a", "grade": 1}],
+    )
+    assert math.isclose(
+        unjudged_first, _protocol_ndcg(["unjudged", "a"], {"a": 1.0}, 2)
+    )
+    assert ndcg_at_k(["a"], k=2, relevance_judgments=None, gold_ids=None) is None
+    assert ndcg_at_k(
+        ["a"],
+        k=1,
+        relevance_judgments=[{"chunk_id": "a", "grade": 0}, {"chunk_id": "b", "grade": -1}],
+    ) is None
+
+
+def test_token_overlap_matches_sklearn_confusion_counts():
+    from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
+
+    overlap = token_overlap("dog dog cat", "dog bird")
+    labels = ["bird", "cat", "dog"]
+    y_true = [1, 0, 1]
+    y_pred = [0, 1, 1]
+    assert overlap["token_precision"] == precision_score(y_true, y_pred, zero_division=0)
+    assert overlap["token_recall"] == recall_score(y_true, y_pred, zero_division=0)
+    assert overlap["token_f1"] == f1_score(y_true, y_pred, zero_division=0)
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    assert (tn, fp, fn, tp) == (0, 1, 1, 1)
+    assert overlap["token_precision"] == 0.5
+    assert overlap["token_recall"] == 0.5
+    assert math.isclose(overlap["token_f1"], 0.5)
+    assert token_overlap("alpha beta", "gamma delta")["token_f1"] == 0.0
+    assert token_overlap("same same", "same")["token_precision"] == 1.0
+
+
+def test_k_must_be_positive():
+    for fn in (hit_at_k, recall_at_k, precision_at_k, mrr_at_k):
+        try:
+            fn(["a"], ["a"], 0)
+        except ValueError as exc:
+            assert "k must be >= 1" in str(exc)
+        else:
+            raise AssertionError("expected ValueError")
+    try:
+        ndcg_at_k(["a"], gold_ids=["a"], k=0)
+    except ValueError as exc:
+        assert "k must be >= 1" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
 
 
 def test_abstention_expected_versus_not():

@@ -233,7 +233,8 @@ class Retriever:
         try:
             vector = await self._run_with_timeout(
                 self._embed_query,
-                expand_query_with_document_aliases(query.text),
+                #expand_query_with_document_aliases(query.text),
+                query.text,
                 timeout=self._settings.embedding_timeout_seconds,
             )
 

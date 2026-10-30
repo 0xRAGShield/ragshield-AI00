@@ -1,9 +1,17 @@
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+import numpy as np
+from numba.typed import List
+from ranx.metrics.hit_rate import hit_rate
+from ranx.metrics.ndcg import ndcg_burges
+from ranx.metrics.precision import precision as ranx_precision
+from ranx.metrics.recall import recall as ranx_recall
+from ranx.metrics.reciprocal_rank import reciprocal_rank
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 from common import (
     HUMAN_RATING_FIELDS,
@@ -56,6 +64,12 @@ def metric_coverage(
     }
 
 
+# Binary metrics treat a judgment as relevant at relevance >= 1.
+_BINARY_REL_LEVEL = 1
+# Graded nDCG must keep fractional grades. ranx's default level of 1 would drop them.
+_GRADED_REL_LEVEL = -1.0e9
+
+
 def _as_ids(ranked: Sequence[str] | None) -> list[str]:
     if not ranked:
         return []
@@ -68,20 +82,67 @@ def _gold_set(gold: Sequence[str] | None) -> set[str] | None:
     return {str(item).strip() for item in gold if str(item).strip()}
 
 
+def _dedupe_keep_first(ids: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in ids:
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+def _id_index(ids: Sequence[str]) -> dict[str, float]:
+    index: dict[str, float] = {}
+    for item in ids:
+        if item not in index:
+            index[item] = float(len(index) + 1)
+    return index
+
+
+def _ranx_queries(rows: list[list[float]]) -> List:
+    if rows:
+        matrix = np.asarray(rows, dtype=np.float64)
+    else:
+        matrix = np.zeros((0, 2), dtype=np.float64)
+    queries = List()
+    queries.append(matrix)
+    return queries
+
+
+def _binary_qrels_and_run(
+    ranked_ids: Sequence[str],
+    gold: set[str],
+    k: int,
+) -> tuple[List, List]:
+   
+    window = _dedupe_keep_first(_as_ids(ranked_ids)[:k])
+    index = _id_index([*gold, *window])
+    qrels = _ranx_queries([[index[doc], 1.0] for doc in gold])
+    run = _ranx_queries([
+    [index[doc], float(len(window) - rank)]
+    for rank, doc in enumerate(window)
+     ])
+    return qrels, run
+
+
+def _require_k(k: int) -> None:
+    if k < 1:
+        raise ValueError("k must be >= 1")
+
+
 def hit_at_k(
     ranked_ids: Sequence[str],
     gold_ids: Sequence[str] | None,
     k: int,
 ) -> float | None:
-    
     gold = _gold_set(gold_ids)
     if gold is None:
         return None
-    if k < 1:
-        raise ValueError("k must be >= 1")
-    if not gold:
-        return 0.0
-    return float(any(item in gold for item in _as_ids(ranked_ids)[:k]))
+    _require_k(k)
+    qrels, run = _binary_qrels_and_run(ranked_ids, gold, k)
+    return float(hit_rate(qrels, run, k, _BINARY_REL_LEVEL)[0])
 
 
 def recall_at_k(
@@ -92,11 +153,9 @@ def recall_at_k(
     gold = _gold_set(gold_ids)
     if gold is None:
         return None
-    if k < 1:
-        raise ValueError("k must be >= 1")
-    if not gold:
-        return 0.0
-    return len(gold.intersection(_as_ids(ranked_ids)[:k])) / len(gold)
+    _require_k(k)
+    qrels, run = _binary_qrels_and_run(ranked_ids, gold, k)
+    return float(ranx_recall(qrels, run, k, _BINARY_REL_LEVEL)[0])
 
 
 def precision_at_k(
@@ -104,14 +163,12 @@ def precision_at_k(
     gold_ids: Sequence[str] | None,
     k: int,
 ) -> float | None:
-    
     gold = _gold_set(gold_ids)
     if gold is None:
         return None
-    if k < 1:
-        raise ValueError("k must be >= 1")
-    ranked = _as_ids(ranked_ids)[:k]
-    return len(gold.intersection(ranked)) / k
+    _require_k(k)
+    qrels, run = _binary_qrels_and_run(ranked_ids, gold, k)
+    return float(ranx_precision(qrels, run, k, _BINARY_REL_LEVEL)[0])
 
 
 def mrr_at_k(
@@ -122,14 +179,9 @@ def mrr_at_k(
     gold = _gold_set(gold_ids)
     if gold is None:
         return None
-    if k < 1:
-        raise ValueError("k must be >= 1")
-    if not gold:
-        return 0.0
-    for rank, item in enumerate(_as_ids(ranked_ids)[:k], start=1):
-        if item in gold:
-            return 1.0 / rank
-    return 0.0
+    _require_k(k)
+    qrels, run = _binary_qrels_and_run(ranked_ids, gold, k)
+    return float(reciprocal_rank(qrels, run, k, _BINARY_REL_LEVEL)[0])
 
 
 def _grades_for_ids(
@@ -154,31 +206,53 @@ def _grades_for_ids(
     return grades
 
 
+def _mask_repeated_ranked_ids(ranked: Sequence[str], reserved: set[str]) -> list[str]:
+    
+    seen: set[str] = set()
+    masked: list[str] = []
+    repeat_index = 0
+    for item in ranked:
+        if item not in seen:
+            seen.add(item)
+            masked.append(item)
+            continue
+        while True:
+            placeholder = f"__ndcg_unjudged_repeat_{repeat_index}__"
+            repeat_index += 1
+            if placeholder not in reserved and placeholder not in seen:
+                break
+        seen.add(placeholder)
+        masked.append(placeholder)
+    return masked
+
+
 def ndcg_at_k(
     ranked_ids: Sequence[str],
     gold_ids: Sequence[str] | None = None,
     k: int = 5,
     relevance_judgments: Sequence[Mapping[str, Any]] | None = None,
 ) -> float | None:
-  
-    if k < 1:
-        raise ValueError("k must be >= 1")
+
+    _require_k(k)
     grades = _grades_for_ids(gold_ids, relevance_judgments)
-    if not grades:
+    if not grades or max(grades.values()) <= 0:
         return None
-
-    def dcg(order: Sequence[str]) -> float:
-        total = 0.0
-        for rank, item in enumerate(order[:k], start=1):
-            rel = grades.get(item, 0.0)
-            total += (2.0**rel - 1.0) / math.log2(rank + 1)
-        return total
-
-    ideal = sorted(grades, key=lambda cid: grades[cid], reverse=True)
-    ideal_dcg = dcg(ideal)
-    if ideal_dcg <= 0:
-        return None
-    return dcg(_as_ids(ranked_ids)) / ideal_dcg
+    ranked = _mask_repeated_ranked_ids(
+        _as_ids(ranked_ids)[:k],
+        reserved=set(grades),
+    )
+    index = _id_index([*ranked, *grades])
+    q_rows = sorted(
+        ([index[doc], float(rel)] for doc, rel in grades.items()),
+        key=lambda row: row[1],
+        reverse=True,
+    )
+    qrels = _ranx_queries(q_rows)
+    run = _ranx_queries([
+    [index[doc], float(len(ranked) - rank)]
+    for rank, doc in enumerate(ranked)
+     ])
+    return float(ndcg_burges(qrels, run, k, _GRADED_REL_LEVEL)[0])
 
 
 def ranking_bundle(
@@ -272,13 +346,13 @@ def token_overlap(pred: str | None, ref: str | None) -> dict[str, float | None]:
         return {"token_precision": None, "token_recall": None, "token_f1": None}
     pred_set = set(pred_tokens)
     ref_set = set(ref_tokens)
-    overlap = len(pred_set & ref_set)
-    precision = overlap / len(pred_set)
-    recall = overlap / len(ref_set)
-    if precision + recall == 0:
-        f1 = 0.0
-    else:
-        f1 = 2 * precision * recall / (precision + recall)
+    # Set membership, not token counts. Repeated tokens do not add weight.
+    labels = sorted(pred_set | ref_set)
+    y_true = [1 if token in ref_set else 0 for token in labels]
+    y_pred = [1 if token in pred_set else 0 for token in labels]
+    precision = float(precision_score(y_true, y_pred, pos_label=1, zero_division=0))
+    recall = float(recall_score(y_true, y_pred, pos_label=1, zero_division=0))
+    f1 = float(f1_score(y_true, y_pred, pos_label=1, zero_division=0))
     return {
         "token_precision": precision,
         "token_recall": recall,

@@ -1,4 +1,3 @@
-"""Shared aggregate/exclusion payloads for suite reports."""
 
 from __future__ import annotations
 
@@ -48,6 +47,21 @@ def suite_meta(
             "unlabelled_is_not_zero": True,
             "precision_at_k_denominator": "cutoff k",
             "ndcg_binary_matches_hit_eligibility": True,
+            "ranking_library": "ranx",
+            "ranking_measures": [
+                "hit_rate@k",
+                "recall@k",
+                "precision@k",
+                "mrr@k",
+                "ndcg_burges@k",
+            ],
+            "token_overlap_library": "scikit-learn",
+            "token_overlap_measures": [
+                "precision_score",
+                "recall_score",
+                "f1_score",
+            ],
+            "metric_definitions": "evaluation/METRICS.md",
         },
     }
     if extra:
@@ -97,8 +111,8 @@ def generation_report_markdown(aggregates: dict[str, Any], *, execute: bool) -> 
         "# Generation evaluation report\n\n"
         f"execute={execute}\n\n"
         "Primary scores are **human** 0/1/2 fields (`null` = unannotated). "
-        "token_f1 / exact_match are lexical overlap only and are **not** "
-        "clinical correctness.\n\n"
+        "token_f1 (scikit-learn token-set precision/recall/F1) and exact_match "
+        "are lexical overlap only and are **not** clinical correctness.\n\n"
         + human_evaluation_markdown_table(aggregates)
         + "Human ratings are joined by `query_id` from the dataset JSONL. "
         "`per_query_human_review.jsonl` is an optional non-null override when "
